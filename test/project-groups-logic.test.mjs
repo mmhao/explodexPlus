@@ -139,10 +139,7 @@ describe("planSequence", () => {
   });
 
   test("collapsed groups still list members so they can be hidden", () => {
-    const s = stateWith(
-      [{ id: "g1", name: "G", order: 0, collapsed: true }],
-      { pA: "g1" },
-    );
+    const s = stateWith([{ id: "g1", name: "G", order: 0, collapsed: true }], { pA: "g1" });
     const plan = core.planSequence(s, ["pA", "pB"]);
     expect(plan.map((p) => p.type)).toEqual(["group", "project", "project"]);
   });

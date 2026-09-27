@@ -376,9 +376,7 @@
         const height = panel.offsetHeight;
         const x = Math.max(8, Math.min(rect.left, global.innerWidth - width - 8));
         const fitsBelow = rect.bottom + 4 + height + 8 <= global.innerHeight;
-        const y = fitsBelow
-          ? rect.bottom + 4
-          : Math.max(8, rect.top - height - 4);
+        const y = fitsBelow ? rect.bottom + 4 : Math.max(8, rect.top - height - 4);
         panel.style.left = `${x}px`;
         panel.style.top = `${y}px`;
         panel.style.visibility = "";
@@ -443,7 +441,8 @@
         openMenu(anchor, title, (panel) => {
           const heading = document.createElement("div");
           heading.textContent = title;
-          heading.style.cssText = "padding:6px 10px 4px;opacity:.65;font-size:11px;text-transform:uppercase;letter-spacing:.05em";
+          heading.style.cssText =
+            "padding:6px 10px 4px;opacity:.65;font-size:11px;text-transform:uppercase;letter-spacing:.05em";
           panel.appendChild(heading);
 
           const input = document.createElement("input");
@@ -473,12 +472,15 @@
       function openGroupMenu(anchor, gid) {
         openMenu(anchor, "Group options", (panel) => {
           panel.appendChild(
-            menuItem({ label: "Rename…", onClick: () => {
-              const group = state.groups.find((g) => g.id === gid);
-              openPrompt(anchor, "Rename group", group?.name ?? "", (name) =>
-                commit(core.renameGroup(state, gid, name)),
-              );
-            } }),
+            menuItem({
+              label: "Rename…",
+              onClick: () => {
+                const group = state.groups.find((g) => g.id === gid);
+                openPrompt(anchor, "Rename group", group?.name ?? "", (name) =>
+                  commit(core.renameGroup(state, gid, name)),
+                );
+              },
+            }),
           );
           panel.appendChild(
             menuItem({ label: "Move up", onClick: () => commit(core.moveGroup(state, gid, "up")) }),

@@ -29,6 +29,7 @@
     "win32"
   ],
   "devDependencies": {
+    "prettier": "3.6.2",
     "typescript": "5.9.3"
   },
   "repository": {
@@ -62,6 +63,9 @@
     "layout:snapshot": "bun scripts/cdp-layout-snapshot.ts",
     "react-devtools": "bun scripts/cdp-react-devtools.ts",
     "test": "bun test",
+    "typecheck": "bun run --bun tsc -p tsconfig.plugins.json",
+    "format": "prettier --write lib/platform.mjs lib/platform/windows.mjs lib/launcher-windows.mjs plugins/project-groups plugins/folder-copy-path test/windows-platform.test.mjs test/launcher-windows.test.mjs test/project-groups-logic.test.mjs test/folder-copy-path-logic.test.mjs tsconfig.plugins.json",
+    "format:check": "prettier --check lib/platform.mjs lib/platform/windows.mjs lib/launcher-windows.mjs plugins/project-groups plugins/folder-copy-path test/windows-platform.test.mjs test/launcher-windows.test.mjs test/project-groups-logic.test.mjs test/folder-copy-path-logic.test.mjs tsconfig.plugins.json",
     "build:npm": "bun scripts/build-npm.ts",
     "prepack": "bun run build:npm"
   },

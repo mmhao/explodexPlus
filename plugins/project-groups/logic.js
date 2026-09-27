@@ -44,13 +44,13 @@
 
   function groupOf(state, projectId) {
     const gid = state.membership[projectId] ?? null;
-    return gid ? state.groups.find((g) => g.id === gid) ?? null : null;
+    return gid ? (state.groups.find((g) => g.id === gid) ?? null) : null;
   }
 
   function assignProject(state, projectId, groupId) {
     const p = normalizeId(projectId);
     if (!p) return state;
-    const groups = groupId == null ? null : state.groups.find((g) => g.id === groupId) ?? null;
+    const groups = groupId == null ? null : (state.groups.find((g) => g.id === groupId) ?? null);
     const membership = { ...state.membership };
     if (groups) membership[p] = groups.id;
     else delete membership[p];
@@ -109,7 +109,14 @@
     // Empty groups keep a header so projects can still be moved into them.
     for (const g of state.groups) {
       const members = domProjectIds.filter((p) => state.membership[p] === g.id);
-      seq.push({ type: "group", id: g.id, collapsed: g.collapsed, name: g.name, color: g.color, count: members.length });
+      seq.push({
+        type: "group",
+        id: g.id,
+        collapsed: g.collapsed,
+        name: g.name,
+        color: g.color,
+        count: members.length,
+      });
       for (const p of members) {
         seq.push({ type: "project", id: p });
         seen.add(p);

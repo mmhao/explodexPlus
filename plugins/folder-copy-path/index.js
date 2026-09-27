@@ -29,8 +29,7 @@
     (api) => {
       const { log } = api;
 
-      const ROW_SELECTOR =
-        '[role="treeitem"],[data-file-path],[data-path],[data-folder-path]';
+      const ROW_SELECTOR = '[role="treeitem"],[data-file-path],[data-path],[data-folder-path]';
       const BTN_ATTR = "data-explodex-copy-path";
       const SCAN_DEBOUNCE_MS = 250;
 
@@ -143,18 +142,14 @@
         if (!looksLikeFolder(row, entry, label)) return;
         if (!rawPath && !entry) return;
 
-        const absolute = rawPath
-          ? core.joinPath(cwdFor(row), rawPath)
-          : core.joinPath(cwdFor(row), label);
+        const absolute = rawPath ? core.joinPath(cwdFor(row), rawPath) : core.joinPath(cwdFor(row), label);
         if (!absolute) return;
         row.appendChild(makeButton(absolute));
       }
 
       function scan() {
         if (disposed) return;
-        for (const panel of document.querySelectorAll(
-          '[data-app-shell-focus-area="right-panel"]',
-        )) {
+        for (const panel of document.querySelectorAll('[data-app-shell-focus-area="right-panel"]')) {
           for (const row of panel.querySelectorAll(ROW_SELECTOR)) decorateRow(row);
         }
       }

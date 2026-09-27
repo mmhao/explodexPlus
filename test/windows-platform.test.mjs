@@ -47,7 +47,13 @@ describe("port ownership", () => {
   });
 
   test("attributes a ChatGPT.exe owner to Codex", () => {
-    const owners = [{ pid: 1, path: "C:\\Program Files\\WindowsApps\\app\\ChatGPT.exe", args: "ChatGPT.exe --remote-debugging-port=9333" }];
+    const owners = [
+      {
+        pid: 1,
+        path: "C:\\Program Files\\WindowsApps\\app\\ChatGPT.exe",
+        args: "ChatGPT.exe --remote-debugging-port=9333",
+      },
+    ];
     expect(portOwnedByCodex(owners, { uiExecutable: "C:\\anything\\app\\ChatGPT.exe" })).toBe(true);
   });
 
@@ -75,7 +81,9 @@ describe("launch argument construction", () => {
   test("activates via shell:AppsFolder so the app keeps its MSIX identity", () => {
     const script = activationScript("OpenAI.Codex_2p2nqsd0c76g0!App", 9333);
     expect(script).toContain("Shell.Application");
-    expect(script).toContain("ShellExecute('shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App', '--remote-debugging-port=9333')");
+    expect(script).toContain(
+      "ShellExecute('shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App', '--remote-debugging-port=9333')",
+    );
   });
   test("escapes quotes in the AUMID", () => {
     expect(activationScript("a'b", 9333)).toContain("a''b");
@@ -84,7 +92,12 @@ describe("launch argument construction", () => {
 
 describe("AUMID derivation", () => {
   test("parseAppxPackage appends !App to the package family name", () => {
-    const json = JSON.stringify({ PackageName: "OpenAI.Codex", PackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0", Version: "1.0", InstallLocation: "C:\\pkg\\" });
+    const json = JSON.stringify({
+      PackageName: "OpenAI.Codex",
+      PackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0",
+      Version: "1.0",
+      InstallLocation: "C:\\pkg\\",
+    });
     expect(parseAppxPackage(json).aumid).toBe("OpenAI.Codex_2p2nqsd0c76g0!App");
   });
   test("missing family name yields null aumid", () => {
@@ -94,6 +107,10 @@ describe("AUMID derivation", () => {
 });
 
 test("installed mode clears dev profile overrides", () => {
-  const env = installedCodexEnvironment({ HOME: "C:\\h", CODEX_ELECTRON_USER_DATA_PATH: "C:\\dev", EXPLODEX_USER_DATA: "C:\\dev" });
+  const env = installedCodexEnvironment({
+    HOME: "C:\\h",
+    CODEX_ELECTRON_USER_DATA_PATH: "C:\\dev",
+    EXPLODEX_USER_DATA: "C:\\dev",
+  });
   expect(env).toEqual({ HOME: "C:\\h" });
 });
