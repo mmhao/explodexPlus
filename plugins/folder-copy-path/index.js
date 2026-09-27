@@ -80,16 +80,39 @@
         return found;
       }
 
+      function readCwd(props) {
+        if (!props || typeof props !== "object") return null;
+        if (typeof props.cwd === "string" && props.cwd) return props.cwd;
+        if (typeof props.root === "string" && props.root) return props.root;
+        if (Array.isArray(props.roots) && typeof props.roots[0] === "string" && props.roots[0])
+          return props.roots[0];
+        return null;
+      }
+
       function cwdFor(node) {
         let cwd = null;
         walkFibers(node, (props) => {
-          if (typeof props?.cwd === "string" && props.cwd) {
-            cwd = props.cwd;
-            return true;
-          }
-          return false;
+          cwd = readCwd(props);
+          return !!cwd;
         });
-        return cwd;
+        if (cwd) return cwd;
+        // The tree renders into <file-tree-container>'s shadow root, and its
+        // virtualized rows are DOM nodes with no React fiber of their own. The
+        // pane's cwd lives on the host's fiber chain, so climb from the host.
+        const root = typeof node?.getRootNode === "function" ? node.getRootNode() : null;
+        if (root instanceof ShadowRoot) {
+          const cwd2 = cwdFor(root.host);
+          if (cwd2) return cwd2;
+        }
+        // Fallback: the nearest ancestor that has a fiber (the custom-element host).
+        let el = node;
+        for (let i = 0; i < 10 && el; i += 1, el = el.parentElement) {
+          if (reactFiber(el)) {
+            const cwd3 = cwdFor(el);
+            if (cwd3) return cwd3;
+          }
+        }
+        return null;
       }
 
       async function copyToClipboard(text) {
