@@ -69,6 +69,8 @@ Not affiliated with, endorsed by, or supported by OpenAI. Fork preserved under t
 | Doc | Contents |
 | --- | -------- |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | **Codex version × plugin matrix, selector registry** |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Injection chain, platform adapter contract, Windows specifics |
+| [docs/PLUGIN-DEVELOPMENT.md](docs/PLUGIN-DEVELOPMENT.md) | Fork plugin walkthroughs (project-groups, folder-copy-path) + template |
 | [docs/sdk-api.md](docs/sdk-api.md) | SDK API reference (start here for plugin development) |
 | [docs/development.md](docs/development.md) | Repo layout, validation, dev loop, commands |
 | [docs/installation.md](docs/installation.md) | npm install, launcher states, commands, logs |
