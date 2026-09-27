@@ -49,6 +49,12 @@
         let fiber = reactFiber(node);
         for (let depth = 0; depth < maxDepth && fiber; depth += 1) {
           if (visit(fiber.memoizedProps) === true) return true;
+          // Hook components keep entry data in memoizedState, not props.
+          let hook = fiber.memoizedState;
+          for (let h = 0; h < 6 && hook; h += 1, hook = hook.next) {
+            const st = hook.memoizedState ?? hook;
+            if (st && typeof st === "object" && visit(st) === true) return true;
+          }
           fiber = fiber.return;
         }
         return false;
@@ -207,11 +213,21 @@
       // glyphs into a bogus name (real bug: "...\\筛选文件⧉⧉⧉").
       function folderAbsolute(row) {
         const entry = entryFor(row);
-        const attrPath =
+        let attrPath =
           row.getAttribute("data-file-path") ||
           row.getAttribute("data-path") ||
           row.getAttribute("data-folder-path") ||
           "";
+        if (!attrPath) {
+          // Unknown builds stash the relative path in a bespoke data-* attr;
+          // any attribute holding a slash-bearing token is path-like.
+          for (const a of row.attributes) {
+            if (/^data-/i.test(a.name) && /[\\/]/.test(a.value) && a.value.length < 300) {
+              attrPath = a.value;
+              break;
+            }
+          }
+        }
         const rawPath = entry?.path || attrPath;
         const name = entry?.name || "";
         if (!rawPath && !name) return null;
@@ -248,6 +264,7 @@
       // shadow root: plain queries and retargeted event targets stop at the
       // host, so scanning pierces shadow roots and menus use composedPath().
       function treeRoots() {
+        /** @type {(Element | ShadowRoot)[]} */
         const roots = [...document.querySelectorAll('[data-app-shell-focus-area="right-panel"]')];
         for (const host of document.querySelectorAll("file-tree-container")) {
           if (host.shadowRoot && !roots.includes(host.shadowRoot)) roots.push(host.shadowRoot);
@@ -301,10 +318,42 @@
             html: host.shadowRoot.innerHTML.slice(0, 4000),
             samples,
             hostProps: Object.keys(host).slice(0, 20),
+            hostFiber: describeForDump(host),
+            hostAncestors: (() => {
+              const hops = [];
+              let el = host.parentElement;
+              for (let i = 0; i < 4 && el; i += 1, el = el.parentElement) hops.push(describeForDump(el));
+              return hops;
+            })(),
           };
         } catch (err) {
           global.__explodexFcpShadowDump = { error: String(err) };
         }
+      }
+
+      function describeForDump(node) {
+        if (node === document) return "#document";
+        if (node === global) return "#window";
+        if (node.nodeType !== 1) return "#node" + node.nodeType;
+        const attrs = [...node.attributes]
+          .slice(0, 8)
+          .map((a) => `${a.name}=${a.value.slice(0, 44)}`)
+          .join("|");
+        const fk = Object.keys(node).find((k) => k.startsWith("__reactFiber"));
+        let keys = null;
+        if (fk) {
+          let f = node[fk];
+          for (let d = 0; d < 4 && f; d += 1, f = f.return) {
+            const p = f.memoizedProps;
+            if (p && Object.keys(p).length > 2) {
+              keys = Object.keys(p).slice(0, 12);
+              break;
+            }
+          }
+        }
+        const root = node.getRootNode();
+        const inShadow = root instanceof ShadowRoot ? "in:" + root.host.tagName : "doc";
+        return `${node.tagName}{${attrs}}{${inShadow}}${keys ? "{props:" + keys.join(",") + "}" : ""}`;
       }
 
       function onContextMenu(event) {
@@ -314,15 +363,33 @@
         let absolute = null;
         const miss = [];
         let seen = 0;
+        let rightClickedRow = null;
         for (const node of path) {
           if (!node || node.nodeType !== 1) continue;
           if (absolute) break;
+          if (!rightClickedRow && (node.textContent || "").trim()) rightClickedRow = node;
           seen += 1;
           absolute = folderAbsolute(node);
           if (absolute) continue;
           const keys = fiberKeys(node);
           if (keys) miss.push(`${node.tagName}:${keys.join(",")}`);
           if (seen >= 16) break;
+        }
+        if (!global.__explodexFcpPathDump && path.some((n) => n.tagName === "FILE-TREE-CONTAINER")) {
+          try {
+            global.__explodexFcpPathDump = {
+              at: Date.now(),
+              hops: path.slice(0, 14).map(describeForDump),
+              rowText: rightClickedRow ? (rightClickedRow.textContent || "").trim().slice(0, 40) : null,
+              rowChildrenText: rightClickedRow
+                ? [...rightClickedRow.children]
+                    .slice(0, 6)
+                    .map((c) => c.tagName + ":" + (c.textContent || "").trim().slice(0, 20))
+                : null,
+            };
+          } catch (err) {
+            global.__explodexFcpPathDump = { error: String(err) };
+          }
         }
         if (!absolute) {
           if (miss.length) {

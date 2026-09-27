@@ -49,6 +49,13 @@ describe("entryFromProps", () => {
     expect(e.name).toBe("q");
   });
 
+  test("reads relPath/label and loose entry-valued props", () => {
+    const e = core.entryFromProps({ node: { relPath: "app/src", label: "src", type: "directory" } });
+    expect(e).toEqual({ path: "app/src", name: "src", isFolder: true });
+    const loose = core.entryFromProps({ rowMeta: { name: "images", isFolder: true } });
+    expect(loose).toEqual({ path: null, name: "images", isFolder: true });
+  });
+
   test("returns null for junk", () => {
     expect(core.entryFromProps(null)).toBe(null);
     expect(core.entryFromProps({ name: "no path" })).toBe(null);

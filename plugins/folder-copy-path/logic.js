@@ -26,14 +26,32 @@
   // shapes across builds; normalize whatever we can find.
   function entryFromProps(props) {
     if (!props || typeof props !== "object") return null;
-    const direct = [props, props.entry, props.file, props.node, props.item].find(
-      (v) => v && typeof v === "object" && isString(v.path ?? v.absolutePath ?? v.fullPath),
+    const direct = [
+      props,
+      props.entry,
+      props.file,
+      props.node,
+      props.item,
+      props.data,
+      props.fileNode,
+      props.folder,
+    ].find(
+      (v) =>
+        v &&
+        typeof v === "object" &&
+        isString(v.path ?? v.absolutePath ?? v.fullPath ?? v.relPath ?? v.relativePath),
     );
     if (direct) {
-      const path = direct.path ?? direct.absolutePath ?? direct.fullPath;
-      const name = isString(direct.name) ? direct.name : basename(path);
+      const path =
+        direct.path ?? direct.absolutePath ?? direct.fullPath ?? direct.relPath ?? direct.relativePath;
+      const name = isString(direct.name)
+        ? direct.name
+        : isString(direct.label)
+          ? direct.label
+          : basename(path);
       const isFolder =
         direct.type === "directory" ||
+        direct.type === "folder" ||
         direct.isFolder === true ||
         direct.isDirectory === true ||
         direct.kind === "folder" ||
@@ -46,6 +64,29 @@
         name: props.name,
         isFolder: props.type === "directory" || props.isFolder === true || props.isDirectory === true,
       };
+    }
+    // Loose shape: any own property that itself looks like an entry node.
+    for (const key of Object.keys(props)) {
+      const v = props[key];
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+      if (
+        (isString(v.path) || isString(v.name) || isString(v.label)) &&
+        (v.type != null || v.isFolder != null || v.isDirectory != null || v.children != null)
+      ) {
+        const path = v.path ?? v.absolutePath ?? v.fullPath;
+        const name = isString(v.name) ? v.name : isString(v.label) ? v.label : path ? basename(path) : null;
+        if (!name && !isString(path)) continue;
+        return {
+          path: isString(path) ? path : null,
+          name: name ?? "",
+          isFolder:
+            v.type === "directory" ||
+            v.type === "folder" ||
+            v.isFolder === true ||
+            v.isDirectory === true ||
+            Array.isArray(v.children),
+        };
+      }
     }
     return null;
   }
