@@ -1,156 +1,81 @@
-# Explodex 💥
+# Explodex Plus 💥
 
-**Mod the Codex desktop app.**
+**Mod the Codex desktop app on Windows and macOS — without touching the install.**
 
-Explodex (`Ex`tension `pl`ugins for C`odex`) is an extension SDK for OpenAI's [Codex](https://openai.com/codex) desktop app — color-code your projects, keep usage and reset countdowns on screen, set reasoning effort with a keystroke, [or build your own by prompting Codex](#build-your-own-plugin).
-
-[**Install in 30 seconds**](#install) · [Included plugins](#included-plugins) · [Build a plugin](#build-your-own-plugin) · [Docs](#docs)
+Explodex Plus is a fork of [explodex](https://github.com/dan-dr/explodex) with a Windows platform adapter and two extra plugins. It extends OpenAI's [Codex](https://openai.com/codex) desktop app via the Chrome DevTools Protocol: the original, signed app is launched with a debug flag and the plugin SDK is injected at runtime. **Nothing in the Codex installation is ever modified**, so app updates never overwrite (or get broken by) your mods. Used BetterDiscord or Legcord? Same idea, for Codex.
 
 ```sh
-npm install -g explodex
-explodex
+npm install -g explodex-plus
+explodex-plus
 ```
 
-<video src="https://github.com/user-attachments/assets/7cc60fed-cdc1-4083-8800-c493e2aa8025" width="100%" controls autoplay loop muted></video>
+## What you get
 
-## Why
+Everything [upstream explodex](https://github.com/dan-dr/explodex) ships (usage glance, project pins/colors, effort shortcuts, the plugin-builder skill, a 💥 Explodex settings page in the sidebar), plus two plugins built for this fork:
 
-Codex is great but closed. Explodex makes it malleable — so the tweak you keep wishing for is something you can just build. (Used BetterDiscord or Legcord? Same idea, for Codex.)
+| Plugin | What it does |
+| ------ | ------------ |
+| [Project Groups](plugins/project-groups/) | Wrap sidebar projects into collapsible custom groups (work / personal / …). Group state lives in Explodex storage only — Codex never sees it. |
+| [Folder Copy Path](plugins/folder-copy-path/) | Folders in the Files panel get the same copy-path affordance files already have — absolute Windows/POSIX paths on the clipboard. |
 
-## Included plugins
+## Windows install (3 steps)
 
-Explodex ships with a handful of plugins — useful on their own, and good starting points to copy when building your own.
+1. Install the **Codex desktop app from the Microsoft Store** (it must be the MSIX package; Explodex Plus discovers it at runtime with `Get-AppxPackage` — no hardcoded paths).
+2. `npm install -g explodex-plus` (Node ≥ 22).
+3. Run `explodex-plus`.
 
-**💥 Explodex** sidebar item opens a settings page where you can enable/disable plugins and change their options.
+It starts Codex with `--remote-debugging-port=9333` (activated through `shell:AppsFolder` so the app keeps its MSIX package identity) and injects the SDK + plugins. You'll be offered a **"Codex (Explodex)" launcher script** — from then on, start Codex through it whenever you want your mods; the plain Store icon always gives you an unmodified Codex.
 
-| Plugin | What it does | Screenshot |
-| ------ | ------------ | ---------- |
-| [Usage and Reset Glance](plugins/usage-reset-glance/) | Keep usage and credit-reset countdowns on screen — no clicking into menus | <img src="docs/plugins/screenshots/usage-reset-glance.png" alt="Usage & resets in the sidebar" width="400" /> |
-| [Project Pins](plugins/project-pins/) | Pin a thread to its project instead of globally, and keep it at the top | <img src="docs/plugins/screenshots/project-pins.png" alt="Global vs project pin" width="400" /> |
-| [Project Colors](plugins/project-colors/) | Color-code projects and their threads in the sidebar so you can tell them apart at a glance | <img src="docs/plugins/screenshots/project-colors.png" alt="Project colors in the sidebar" width="400" /> |
-| [Threads in Command Menu](plugins/command-menu-threads/) | Find any thread from ⌘K — including threads inside collapsed projects, listed first | <img src="docs/plugins/screenshots/command-menu-threads.png" alt="Threads first in ⌘K" width="400" /> |
-| [Effort Shortcuts](plugins/effort-shortcuts/) | Set reasoning effort from the composer — type `!m` or `!xh`, stripped on send and restored after | <img src="docs/plugins/screenshots/effort-shortcuts.png" alt="Composer prefix hint" width="400" /> |
-| [Feature Flags Playground](plugins/feature-flags-playground/) | Toggle Codex's experimental feature flags from Settings — changes persist across restarts | <img src="docs/plugins/screenshots/feature-flags-playground.png" alt="Feature flags popover" width="400" /> |
+### FAQ
 
+- **Why must I start Codex from the launcher?** The debug flag has to be present at process start. A Codex already running without it can't be injected — the launcher tells you to quit Codex fully (including tray processes) first.
+- **An update broke a plugin?** Updates never delete your mods; at worst a DOM selector stops matching. Re-launch via the launcher, and check [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the selector registry. Prompting Codex with the bundled `explodex-plugin-builder` skill is the intended repair loop.
+- **How do I uninstall?** Delete the launcher shortcut and `%USERPROFILE%\.explodex` (plus `npm rm -g explodex-plus`). The Codex install itself was never touched.
+- **Do my login/settings/projects survive?** Yes — Explodex Plus does not override the Electron user-data directory.
 
-## Build your own plugin
+## macOS install
 
-With Explodex you create mods using Codex itself in realtime. Run explodex, and use the bundled skill, describe what you want, and watch it happen in real time. try *"it's christmas! add a snowing effect to codex"*. The plugin-builder skill drives the whole loop (scaffold → SDK hooks → validate → live injection):
-
-- [`explodex-plugin-builder`](skills/explodex-plugin-builder/SKILL.md): canonical workflow; uses an existing Explodex renderer when available and works offline when it is not
-
-Install it with `explodex install-skill` or `npx skills add dan-dr/explodex`.
-
-The [SDK reference](docs/sdk-api.md) and [types](sdk/explodex-sdk.d.ts) keep the agent on stable surfaces; the included plugins double as templates.
-
-<details>
-<summary>Prefer to write one by hand? Here's a minimal plugin.</summary>
-
-A plugin is a folder with a manifest and an entry script:
-
-```text
-my-plugin/
-  plugin.json
-  index.js
-```
-
-```js
-// @ts-check
-/// <reference path="../../sdk/explodex-sdk.d.ts" />
-
-(function (global) {
-  const Explodex = global.Explodex;
-  if (!Explodex?.plugins?.register) return;
-
-  Explodex.plugins.register(
-    { id: "hello", name: "Hello", version: "1.0.0" },
-    (api) => {
-      const render = () =>
-        api.mount("aboveComposer", () =>
-          api.components.button({
-            label: "Insert greeting",
-            color: "secondary",
-            size: "composerSm",
-            onClick: () => api.composer.insertText("Hello! "),
-          }),
-        );
-
-      render();
-      const stop = api.waitFor("aboveComposer", render);
-      return () => stop();
-    },
-  );
-})(window);
-```
-
-Install user plugins under `~/.explodex/plugins/` (same layout). They override bundled plugins with the same id. In the sidebar, open **💥 Explodex** → **Open Plugins Folder** to reveal that directory.
-
-See the [SDK API reference](docs/sdk-api.md) and the [development guide](docs/development.md) for the full workflow.
-
-</details>
-
-## Install
-
-You'll need macOS, the [Codex desktop app](https://openai.com/codex) at `/Applications/Codex.app`, and a package manager ([Bun](https://bun.sh), npm, pnpm, or Yarn).
-
-Install globally, then run `explodex`:
-
-```sh
-# pick one
-npm install -g explodex
-pnpm add -g explodex
-bun install -g explodex
-yarn global add explodex
-
-explodex
-```
-
-You will be prompted to create `~/Applications/Explodex.app`, a lightweight launcher: it does not modify, re-sign, or change the bundle ID of Codex.
-The first interactive run also offers to install the plugin creator skill. Re-run both onboarding checks later with `explodex doctor`.
-
-See [docs/installation.md](docs/installation.md) for commands, launch states, recovery, and logs.
-
-### Install from source
-
-To build plugins, clone the repo and run the dev loop:
-
-```sh
-git clone https://github.com/dan-dr/explodex.git
-cd explodex
-bun run dev
-```
-
-`bun run dev` packages the app, launches Codex with remote debugging, injects the SDK + plugins, and starts Chrome DevTools MCP for live renderer inspection — exactly the loop the agent skills drive. Dev state is isolated under `.explodex-user-data/`.
-
-### Develop
-
-Repo layout, the dev loop, validation, and the `bun run` commands live in **[docs/development.md](docs/development.md)**.
+Unchanged from upstream — see [docs/installation.md](docs/installation.md). The macOS launcher app (`~/Applications/Explodex.app`) is created by `explodex-plus install`.
 
 ## How it works
 
-Explodex creates a thin local launcher (`Explodex.app`) that starts the unmodified Codex executable with Chrome DevTools Protocol enabled, then injects the npm-packaged SDK and plugins. The SDK (`sdk/explodex-sdk.js`) provides:
+```
+explodex-plus ──► Codex (original binary, +debug flag) ──► CDP :9333
+                                                        │
+                    lib/cdp-inject.mjs ◄────────────────┘
+                        ├─ sdk/explodex-sdk.js   (window.Explodex)
+                        └─ plugins/<id>/          (bundled + ~/.explodex/plugins)
+```
 
 - **DOM zones** — `aboveComposer`, `sidebar`, `composerActions`, and more
 - **Components** — buttons, panels, toasts styled like Codex
 - **Bridge** — AppServer router and Electron IPC to Codex internals
 - **Plugin manager** — catalog, enable/disable, hot load in dev
 
+Platform differences are isolated in `lib/platform/{macos,windows}.mjs`; everything above is shared.
+
+## Build your own plugin
+
+Run Explodex Plus, install the bundled skill (`explodex-plus install-skill`), and describe what you want to Codex in plain language — the [plugin-builder skill](skills/explodex-plugin-builder/SKILL.md) drives scaffold → SDK hooks → validate → live injection. The [SDK reference](docs/sdk-api.md) keeps the agent on stable surfaces, and the included plugins double as templates (`project-groups` is a good DOM-reconcile example; `folder-copy-path` shows fiber-based data extraction).
+
 ## Compatibility & safety
 
-Explodex injects locally into Codex's renderer. It **never modifies** your installed `/Applications/Codex.app` and runs entirely on your machine. Because it hooks Codex internals, a plugin may need an update when Codex ships a new release — see [docs/sdk-fragility.md](docs/sdk-fragility.md).
+Explodex Plus injects locally into Codex's renderer. It **never modifies** the installed app and runs entirely on your machine. Because it hooks Codex internals, a plugin may need an update when Codex ships a new release — see [docs/sdk-fragility.md](docs/sdk-fragility.md) and the version matrix in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-macOS only for now. Not affiliated with, endorsed by, or supported by OpenAI.
+Not affiliated with, endorsed by, or supported by OpenAI. Fork preserved under the [upstream license](LICENSE).
 
 ## Docs
 
 | Doc | Contents |
 | --- | -------- |
-| [docs/sdk-api.md](docs/sdk-api.md) | **SDK API reference** (start here for plugin development) |
+| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | **Codex version × plugin matrix, selector registry** |
+| [docs/sdk-api.md](docs/sdk-api.md) | SDK API reference (start here for plugin development) |
 | [docs/development.md](docs/development.md) | Repo layout, validation, dev loop, commands |
 | [docs/installation.md](docs/installation.md) | npm install, launcher states, commands, logs |
-| [docs/local-development.md](docs/local-development.md) | Packaging, user data, plugin paths |
-| [docs/codex-architecture.md](docs/codex-architecture.md) | Bundle topology, injection, IPC |
-| [docs/composer-message-lifecycle.md](docs/composer-message-lifecycle.md) | Composer send APIs and hook points |
+| [docs/windows-feasibility.md](docs/windows-feasibility.md) | Upstream spike notes this fork implemented |
 | [docs/sdk-fragility.md](docs/sdk-fragility.md) | What breaks across Codex updates |
-| [docs/windows-feasibility.md](docs/windows-feasibility.md) | Windows feasibility spike; not a support claim |
-| [docs/plugins/README.md](docs/plugins/README.md) | Bundled plugin notes |
+| [CHANGELOG.md](CHANGELOG.md) | Release history (keep-a-changelog) |
+
+## Credit
+
+All architecture, the SDK, injector, and the original plugins come from [dan-dr/explodex](https://github.com/dan-dr/explodex). This fork adds: the Windows platform adapter (MSIX-identity activation, Store-package discovery, launcher generation), dual-platform CI, and the two plugins above.

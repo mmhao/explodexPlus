@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+## [explodex-plus 0.1.0] - 2026-09-27
+
+Fork of upstream explodex 0.2.2 below, adding Windows support and two plugins.
+
+### Added
+- Windows platform adapter (`lib/platform/windows.mjs`): Store-package discovery
+  via `Get-AppxPackage`, MSIX-identity launch through `shell:AppsFolder`
+  (direct exe launch loses package identity), debug-port/ownership probing,
+  four-state launch machine, `%LOCALAPPDATA%` logging, generated
+  "Codex (Explodex)" launcher command scripts.
+- **Project Groups plugin** (`plugins/project-groups/`): collapsible custom
+  groups wrapping sidebar projects; DOM-reorder only, state persisted through
+  the bridge global state with a local fallback.
+- **Folder Copy Path plugin** (`plugins/folder-copy-path/`): copy-path buttons
+  on folder rows in the Files panel, React-fiber path resolution,
+  Windows/POSIX path joining.
+- Unit tests for the Windows adapter and both plugins' pure logic cores.
+- Dual-platform CI (macOS + Windows) and `docs/COMPATIBILITY.md`
+  (Codex version matrix + selector registry).
+
+### Changed
+- Package and CLI renamed to `explodex-plus` (coexists with upstream
+  `explodex`); `os` now includes `win32`.
+
+## [Unreleased] (upstream)
+
 ## [0.2.2] - 2026-06-29
 ### Added
 - Interactive `explodex` CLI with first-run launcher setup (`@clack/prompts`).
