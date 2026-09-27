@@ -196,6 +196,10 @@
         return h >= 8 && h <= 56;
       }
 
+      function isAbsolutePathLike(p) {
+        return /^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("/") || p.startsWith("\\\\");
+      }
+
       // Resolves a folder row to an absolute path — strictly from React-fiber
       // entry data or data-* attributes. textContent is never used: a
       // mis-matched container's text mixes sibling labels and our own button
@@ -218,7 +222,12 @@
             name: name || rawPath,
           });
         if (!isFolder) return null;
-        const absolute = core.joinPath(cwdFor(row), rawPath || name);
+        const cwd = cwdFor(row);
+        const rel = rawPath || name;
+        // Refuse to hand back a relative path: without a cwd root, a
+        // workspace-relative entry would copy a useless fragment.
+        if (!cwd && !isAbsolutePathLike(rel)) return null;
+        const absolute = core.joinPath(cwd, rel);
         if (absolute) {
           const dbg = (global.__explodexFcpDebug = global.__explodexFcpDebug || []);
           dbg.push({ absolute, tag: row.tagName, cls: String(row.className).slice(0, 40) });
@@ -227,16 +236,34 @@
         return absolute || null;
       }
 
+      function fiberKeys(node) {
+        const fk = Object.keys(node).find((k) => k.startsWith("__reactFiber"));
+        if (!fk) return null;
+        const p = node[fk].memoizedProps;
+        return p ? Object.keys(p).slice(0, 14) : null;
+      }
+
       function onContextMenu(event) {
-        const panel = event.target.closest?.('[data-app-shell-focus-area="right-panel"]');
-        if (!panel) return;
+        // Whole-app scope: Codex shows folder lists in the right panel AND
+        // inline in chat (diff/"changed files" blocks). Walking up from the
+        // cursor is cheap, so we don't need a scan to cover those too.
         let node = event.target;
         let absolute = null;
-        for (let hop = 0; hop < 8 && node && panel.contains(node); hop += 1, node = node.parentElement) {
+        const miss = [];
+        for (let hop = 0; hop < 10 && node && node !== document.body; hop += 1, node = node.parentElement) {
           absolute = folderAbsolute(node);
           if (absolute) break;
+          const keys = node.tagName ? fiberKeys(node) : null;
+          if (keys) miss.push(`${node.tagName}:${keys.join(",")}`);
         }
-        if (!absolute) return;
+        if (!absolute) {
+          if (miss.length) {
+            const dbg = (global.__explodexFcpDebug = global.__explodexFcpDebug || []);
+            dbg.push({ absolute: null, miss: miss.slice(0, 6) });
+            if (dbg.length > 40) dbg.shift();
+          }
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         showMenuAt(event.clientX, event.clientY, [

@@ -257,18 +257,7 @@
           event.stopPropagation();
         });
         header.appendChild(btn);
-        ensureRowContextMenu(header, projectId);
         return btn;
-      }
-
-      function ensureRowContextMenu(header, projectId) {
-        if (header.dataset.explodexMoveCtx === "true") return;
-        header.dataset.explodexMoveCtx = "true";
-        header.addEventListener("contextmenu", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openProjectMenu(null, projectId, { x: event.clientX, y: event.clientY });
-        });
       }
 
       function setBlockHidden(block, hidden) {
@@ -557,23 +546,6 @@
                 }),
               );
             }
-            panel.appendChild(
-              menuItem({
-                label: "+ New group…",
-                onClick: () =>
-                  openPrompt(
-                    anchor,
-                    "New group",
-                    "",
-                    (name) => {
-                      const created = core.createGroup(state, name);
-                      const group = created.groups[created.groups.length - 1];
-                      commit(core.assignProject(created, projectId, group?.id ?? null));
-                    },
-                    at,
-                  ),
-              }),
-            );
           },
           at,
         );
@@ -593,6 +565,18 @@
         closeMenu();
       }
 
+      // Delegated on document (not per-row) so teardown fully removes it:
+      // listeners bound onto Codex-owned nodes survive hot re-injection.
+      function onRowContextMenu(event) {
+        const header = event.target.closest?.("[data-app-action-sidebar-project-id]");
+        if (!header) return;
+        const projectId = header.getAttribute("data-app-action-sidebar-project-id");
+        if (!projectId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openProjectMenu(null, projectId, { x: event.clientX, y: event.clientY });
+      }
+
       // --- wiring ---------------------------------------------------------------------
 
       ensureStyles();
@@ -603,6 +587,7 @@
       });
       global.addEventListener("keydown", onKeyDown, true);
       global.addEventListener("pointerdown", onGlobalPointerDown, true);
+      global.addEventListener("contextmenu", onRowContextMenu, true);
       global.addEventListener("scroll", closeMenu, true);
 
       void hydrate()
@@ -622,6 +607,7 @@
         unsubscribeSidebar?.();
         global.removeEventListener("keydown", onKeyDown, true);
         global.removeEventListener("pointerdown", onGlobalPointerDown, true);
+        global.removeEventListener("contextmenu", onRowContextMenu, true);
         global.removeEventListener("scroll", closeMenu, true);
         for (const entry of projectEntries()) {
           setBlockHidden(entry.block, false);
