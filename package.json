@@ -25,7 +25,8 @@
     "node": ">=22"
   },
   "os": [
-    "darwin"
+    "darwin",
+    "win32"
   ],
   "devDependencies": {
     "typescript": "5.9.3"

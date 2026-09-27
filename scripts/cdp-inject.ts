@@ -6,7 +6,7 @@
 
 import { readFileSync, readdirSync, existsSync, statSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve, basename, extname } from "node:path";
+import { dirname, join, resolve, basename, extname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -153,10 +153,13 @@ function pluginEntryFromDir(path: string): PluginEntry | null {
     : [entryName];
   if (!scriptNames.includes(entryName)) scriptNames.push(entryName);
   const sources: string[] = [];
+  const pluginRoot = resolve(path);
   for (const scriptName of scriptNames) {
     const scriptPath = resolve(path, scriptName);
+    const rel = relative(pluginRoot, scriptPath);
+    const escapesRoot = rel === "" || rel.startsWith("..") || rel.includes(sep) || rel.includes("/");
     if (
-      !scriptPath.startsWith(`${resolve(path)}/`) ||
+      escapesRoot ||
       !existsSync(scriptPath) ||
       !statSync(scriptPath).isFile()
     ) {
