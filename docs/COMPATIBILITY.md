@@ -28,14 +28,41 @@ Known dead ends (do not retry): direct `Start-Process` of the packaged exe
 opens the port but the app aborts with "no package identity";
 `IApplicationActivationManager` CLSIDs are not registered on current Windows.
 
+Process detection: "Codex is running" must match **only** the UI process
+`ChatGPT`. The SYSTEM service `codex-windows-sandbox-service` and the `codex`
+CLI share the old prefix regex and wedged the launcher in "Quit Codex first"
+state; the filter is an exact `^chatgpt$` match now.
+
+## SDK (`sdk/explodex-sdk.js`, fork-local divergences from upstream)
+
+- **Plugin enabled/disabled map is durable via globalState.** Upstream keeps it
+  only in renderer localStorage (`storage.persisted`), which Electron flushes
+  lazily — a force-killed renderer loses recent toggles. The fork mirrors the
+  map to `storage.globalState` (key `explodex-plugin-enabled`, lands in
+  `~/.codex/.codex-global-state.json`) and re-adopts it at boot when
+  localStorage disagrees.
+- **Upstream footer-strip bug (f/u stray letters).** `ensureFooterPluginStrip`
+  mounts into a ~32px-wide `pointer-events-none absolute top-[…]` host in
+  26.924.x; `.ex-nav-btn-compact` clips to ~16px, so
+  `feature-flags-playground` ("Flags: 53/155") and `usage-reset-glance`
+  ("Usage: loading…") render as stray "F"/"U" near the bottom of the sidebar.
+  Upstream display bug — until upstream fixes the host width, disable these
+  two plugins in the Explodex settings page.
+
 ## project-groups
 
 | Selector / attribute | Used for |
 | --- | --- |
-| `nav[aria-label="Chat history"]` (fallbacks: `aside.app-shell-left-panel nav`, `nav`) | sidebar root |
+| `[data-app-action-sidebar-project-id]` → `closest("nav")` | sidebar root (primary — locale-proof) |
+| `nav[aria-label="Chat history"]` (fallbacks: `aside.app-shell-left-panel nav`, `nav`) | sidebar root, English UI only |
 | `[data-app-action-sidebar-project-id]` | project header rows (stable ids; also `data-app-action-sidebar-project-label`, `-collapsed`) |
 | `closest('[class~="group/cwd"]')` (fallback: header itself) | per-project block that gets reordered |
 | `storage.globalState` key `explodex-project-groups-state` | persistence (visible in `~/.codex/.codex-global-state.json`) |
+
+**Locale note:** Codex translates the sidebar `aria-label` (zh-CN renders it as
+"首页"), and a plain `nav` fallback then picks the icon rail instead of the
+projects nav — groups silently disappear. The root is therefore derived from a
+project header, which exists in every locale.
 
 ## folder-copy-path
 

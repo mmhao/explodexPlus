@@ -2496,6 +2496,9 @@
 
   function writeEnabledMap(map) {
     storage.persisted.set(PLUGIN_ENABLED_KEY, map);
+    // localStorage flushes lazily and a killed renderer loses recent writes;
+    // mirror to Codex global state (AppServer-side) so toggles survive restarts.
+    Promise.resolve(storage.globalState.set(PLUGIN_ENABLED_KEY, map)).catch(() => {});
   }
 
   function isPluginEnabled(id) {
@@ -3282,6 +3285,21 @@ Use the existing Explodex renderer for live iteration when available; otherwise 
 
   log.info("initializing", { version: VERSION });
   initFromCatalog();
+
+  // The globalState mirror is the durable source of truth; adopt it whenever
+  // the lazily-flushed localStorage disagrees (e.g. renderer killed pre-flush).
+  Promise.resolve(storage.globalState.get(PLUGIN_ENABLED_KEY))
+    .then((durable) => {
+      if (!durable || typeof durable !== "object") return;
+      const local = storage.persisted.get(PLUGIN_ENABLED_KEY, null) ?? {};
+      if (JSON.stringify(durable) === JSON.stringify(local)) return;
+      const before = { ...defaultEnabledState(), ...local };
+      storage.persisted.set(PLUGIN_ENABLED_KEY, { ...local, ...durable });
+      for (const [id, enabled] of Object.entries(durable)) {
+        if ((before[id] !== false) !== Boolean(enabled)) requestPluginToggle(id, Boolean(enabled));
+      }
+    })
+    .catch(() => {});
 
   log.info("ready", {
     zones: api.zones.length,

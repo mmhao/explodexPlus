@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Windows launcher no longer wedges in "Quit Codex first" when
+  `codex-windows-sandbox-service` or the `codex` CLI is running — only the
+  `ChatGPT` UI process counts as Codex.
+- Plugin enable/disable toggles survive renderer force-kills: the enabled map
+  is mirrored to Codex global state and re-adopted at boot (SDK-level).
+- project-groups sidebar root is locale-proof (derived from project rows via
+  `closest("nav")`); groups no longer vanish when the Codex UI is non-English.
+- project-groups "move to group" (▦) button is always visible on project rows
+  (was hover-only with `opacity:0`, undiscoverable).
+
 ## [explodex-plus 0.1.0] - 2026-09-27
 
 Fork of upstream explodex 0.2.2 below, adding Windows support and two plugins.

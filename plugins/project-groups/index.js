@@ -102,7 +102,11 @@
       // --- DOM discovery ----------------------------------------------------
 
       function sidebarNavRoot() {
+        // Locale-proof: aria-label is translated ("Chat history" / "首页" / …),
+        // so prefer the nav that actually hosts the project rows.
+        const viaProject = document.querySelector("[data-app-action-sidebar-project-id]")?.closest("nav");
         return (
+          viaProject ??
           document.querySelector('nav[aria-label="Chat history"]') ??
           document.querySelector("aside.app-shell-left-panel nav") ??
           document.querySelector("nav")
@@ -148,9 +152,9 @@
         ".explodex-group-header:hover .explodex-group-menubtn{opacity:.7}" +
         ".explodex-group-add{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:4px 0;border-radius:8px;cursor:pointer;opacity:.55;font:11px/1.4 system-ui,-apple-system,sans-serif;letter-spacing:.05em;text-transform:uppercase}" +
         ".explodex-group-add:hover{background:color-mix(in srgb,currentColor 8%,transparent);opacity:.9}" +
-        ".explodex-group-movebtn{flex:none;border:0;background:transparent;color:inherit;cursor:pointer;opacity:0;padding:0 4px;font-size:12px;line-height:1;border-radius:4px}" +
-        "[data-app-action-sidebar-project-id]:hover .explodex-group-movebtn{opacity:.6}" +
-        ".explodex-group-movebtn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 10%,transparent)}";
+        ".explodex-group-movebtn{flex:none;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.55;padding:0 5px;font-size:13px;line-height:1;border-radius:4px}" +
+        "[data-app-action-sidebar-project-id]:hover .explodex-group-movebtn{opacity:.85}" +
+        ".explodex-group-movebtn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 14%,transparent)}";
 
       function ensureStyles() {
         let style = document.getElementById("explodex-project-groups-styles");
