@@ -37,6 +37,11 @@
   `data-*` attributes, nested duplicates are deduped per absolute path, list
   containers are excluded by a row-size guard, and right-click "Copy path"
   works app-wide (right panel and chat file lists alike).
+- folder-copy-path: **live-verified against Codex 26.924.x.** The tree's
+  virtualized rows turned out to be DOM buttons with no React fiber at all;
+  the row path/type come from `data-item-path`/`data-item-type`, and the
+  workspace `cwd` is reachable only on `<file-tree-container>`'s host fiber
+  chain — `cwdFor` now jumps row → shadow root → host to find it.
 
 ## [explodex-plus 0.1.0] - 2026-09-27
 

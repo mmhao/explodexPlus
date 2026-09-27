@@ -76,11 +76,11 @@ lives on the "+ New group" row.
 | --- | --- |
 | `<file-tree-container>` (shadow root) | the tree UI is a custom element; plain queries stop at the host, so scanning pierces `host.shadowRoot` and menus walk `event.composedPath()` |
 | `[data-app-shell-focus-area="right-panel"]` | Files/Browser/Terminal panel root |
-| `[role="treeitem"], [data-file-path], [data-path], [data-folder-path]` | candidate file/folder rows |
+| **`BUTTON[data-item-path="…/"][data-item-type="folder"]` (verified live)** | the real rows: a virtualized list of DOM buttons with **no React fiber**; the relative path sits in `data-item-path` (trailing `/` ⇒ folder) and `data-item-type` in `folder`/`file` |
+| `[role="treeitem"], [data-file-path], [data-path], [data-folder-path]` | older/alternative row shapes |
 | any `data-*` attribute whose value contains `/` or `\` | bespoke path props on unknown builds |
-| fiber props: `path` / `absolutePath` / `fullPath` / `relPath` / `relativePath`, `entry`/`file`/`node`/`item`/`data`/`fileNode`/`folder` wrappers, `type:"directory"`, `isFolder`, `children` | path + folder detection (multi-shape on purpose) |
-| fiber hook `memoizedState` chains | entries the tree keeps in hook state rather than props (field triage: data sat on a great-grandparent DOM node) |
-| fiber prop `cwd` (also `workspaceRoot`) | absolute-path join root; seen on Files pane ancestors |
+| host fiber chain (from `<file-tree-container>`, ~5 hops up): prop `cwd` / `root` / `roots[0]` | absolute-path join root — **not reachable from rows** (they have no fiber); `cwdFor` jumps row → shadow root → host fiber |
+| fiber props: `path`/`absolutePath`/`fullPath`/`relPath`/`relativePath`, `entry`/`file`/`node`/`item`/`data` wrappers, `type:"directory"`, `isFolder`, `children`; hook `memoizedState` chains | fiber-backed trees on other builds (multi-shape on purpose) |
 | `aria-expanded` / extensionless label | folder heuristic fallback |
 
 Context-menu ("Copy path") works app-wide (right panel **and** chat
@@ -103,12 +103,13 @@ still alive can race two in-memory state copies and lose a write (observed:
 a user group vanished after double injection). Single-instance runs are safe;
 prefer launcher restart over repeated `inject` when state churn is involved.
 
-**Not yet live-verified (needs a session with an active runtime):** the Files
-tree only populates rows once the project runtime is alive; with an idle
-project the pane shows "Select a file from the workspace tree" and the ⌘K file
-index reports `No matching files`. Decoration logic is covered by in-page
-synthetic fixtures + unit tests; run one message in any local project to
-verify against real rows.
+**Live-verified 2026-09-28 (Codex 26.924.2738.0):** folder-copy-path resolves
+real shadow-DOM tree rows (`H:\code\own\test\android\images`) with the user's
+mouse. Note the Files tree only populates rows once a project session is
+active; with an idle project the pane stays empty and there is nothing to
+decorate. If a future Codex build regresses this, the
+`__explodexFcpShadowDump` / `__explodexFcpPathDump` buffers above capture the
+new structure without another debug round-trip.
 
 ## Upstream plugins (inherited selectors)
 
