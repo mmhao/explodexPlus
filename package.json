@@ -1,10 +1,10 @@
 {
-  "name": "explodex",
-  "version": "0.2.2",
-  "description": "A plugin SDK for extending the Codex desktop app.",
+  "name": "explodex-plus",
+  "version": "0.1.0",
+  "description": "A plugin SDK for extending the Codex desktop app on Windows and macOS (fork of explodex with a Windows platform adapter).",
   "types": "sdk/explodex-sdk.d.ts",
   "bin": {
-    "explodex": "bin/explodex.mjs"
+    "explodex-plus": "bin/explodex.mjs"
   },
   "packageManager": "bun@1.3.14",
   "publishConfig": {
@@ -44,7 +44,8 @@
     "openai",
     "electron",
     "plugins",
-    "macos"
+    "macos",
+    "windows"
   ],
   "scripts": {
     "dev": "bun scripts/dev.ts",

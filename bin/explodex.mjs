@@ -67,26 +67,26 @@ export function parseCli(args) {
 }
 
 function printHelp() {
-  console.log(`explodex — launch Codex with the Explodex plugin SDK
+  console.log(`explodex-plus — launch Codex with the Explodex plugin SDK
 
 Usage:
-  explodex                    Open Explodex (offers to create the launcher app if missing)
-  explodex install            Install the launcher app without launching
-  explodex uninstall          Remove the launcher app
-  explodex inject             Inject into Codex on the Explodex debug port
-  explodex install-skill      Install the Explodex plugin creator skill
-  explodex doctor             Re-run onboarding checks for the app and skill
-  explodex install [--system] [--force]
-  explodex uninstall [--system]
+  explodex-plus                    Open Explodex (offers to create the launcher app if missing)
+  explodex-plus install            Install the launcher app without launching
+  explodex-plus uninstall          Remove the launcher app
+  explodex-plus inject             Inject into Codex on the Explodex debug port
+  explodex-plus install-skill      Install the Explodex plugin creator skill
+  explodex-plus doctor             Re-run onboarding checks for the app and skill
+  explodex-plus install [--system] [--force]
+  explodex-plus uninstall [--system]
 
 Options:
   -y, --yes                   Skip the confirmation prompt and create the app
   -h, --help                  Show this help
   -v, --version               Print the version
 
-When the launcher app is missing, explodex asks before creating it. Decline and
-explodex still launches Codex and injects plugins this once, just without
-creating the app (run \`explodex install\` to add it later).
+When the launcher app is missing, explodex-plus asks before creating it. Decline and
+it still launches Codex and injects plugins this once, just without
+creating the app (run \`explodex-plus install\` to add it later).
 \`install\`/\`uninstall\` are aliases for \`install-launcher\`/\`uninstall-launcher\`.
 --system targets /Applications and requests authorization.`);
 }

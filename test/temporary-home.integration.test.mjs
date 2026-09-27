@@ -15,5 +15,5 @@ test.skipIf(!IS_MAC)("install-launcher works in a temporary HOME", async () => {
   const proc = Bun.spawn(["node", linkedBin, "install-launcher"], { cwd: root, env: { ...process.env, HOME: home }, stdout: "pipe", stderr: "pipe" });
   expect(await proc.exited).toBe(0);
   const launcher = await readFile(join(home, "Applications", "Explodex.app", "Contents", "MacOS", "Explodex"), "utf8");
-  expect(launcher).toContain("/bin/zsh -lic 'exec explodex --launch'");
+  expect(launcher).toContain("/bin/zsh -lic 'exec explodex-plus --launch'");
 });
