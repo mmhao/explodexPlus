@@ -1,0 +1,10 @@
+{
+  "id": "project-groups",
+  "name": "Project Groups",
+  "version": "0.1.0",
+  "entry": "index.js",
+  "scripts": ["logic.js", "index.js"],
+  "description": "Wrap sidebar projects into collapsible custom groups (work/personal/…) without touching Codex state.",
+  "dynamicLoadable": true,
+  "dynamicUnloadable": true
+}
