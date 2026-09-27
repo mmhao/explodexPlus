@@ -29,7 +29,8 @@
     (api) => {
       const { log } = api;
 
-      const ROW_SELECTOR = '[role="treeitem"],[data-file-path],[data-path],[data-folder-path]';
+      const ROW_SELECTOR =
+        '[role="treeitem"],[data-item-path],[data-file-path],[data-path],[data-folder-path]';
       const BTN_ATTR = "data-explodex-copy-path";
       const ROW_MARK = "data-explodex-copy-path-row";
       const SCAN_DEBOUNCE_MS = 250;
@@ -47,15 +48,25 @@
 
       function walkFibers(node, visit, maxDepth = 32) {
         let fiber = reactFiber(node);
-        for (let depth = 0; depth < maxDepth && fiber; depth += 1) {
+        let steps = 0;
+        // The tree renders inside <file-tree-container>'s shadow root; when the
+        // fiber chain bottoms out at the host boundary, restart from the host
+        // so pane props (cwd/roots) stay reachable.
+        while (fiber && steps < maxDepth) {
           if (visit(fiber.memoizedProps) === true) return true;
           // Hook components keep entry data in memoizedState, not props.
           let hook = fiber.memoizedState;
-          for (let h = 0; h < 6 && hook; h += 1, hook = hook.next) {
+          for (let h = 0; h < 6 && hook && steps < maxDepth; h += 1, hook = hook.next) {
             const st = hook.memoizedState ?? hook;
             if (st && typeof st === "object" && visit(st) === true) return true;
           }
-          fiber = fiber.return;
+          if (!fiber.return) {
+            const root = fiber.stateNode?.getRootNode?.();
+            fiber = root instanceof ShadowRoot ? reactFiber(root.host) : null;
+          } else {
+            fiber = fiber.return;
+          }
+          steps += 1;
         }
         return false;
       }
@@ -213,7 +224,10 @@
       // glyphs into a bogus name (real bug: "...\\筛选文件⧉⧉⧉").
       function folderAbsolute(row) {
         const entry = entryFor(row);
+        // Current Codex tree rows: BUTTON[data-item-path=relative/][data-item-type=folder].
+        const itemType = row.getAttribute?.("data-item-type") || "";
         let attrPath =
+          row.getAttribute?.("data-item-path") ||
           row.getAttribute("data-file-path") ||
           row.getAttribute("data-path") ||
           row.getAttribute("data-folder-path") ||
@@ -229,18 +243,25 @@
           }
         }
         const rawPath = entry?.path || attrPath;
-        const name = entry?.name || "";
+        const leafOf = (p) =>
+          String(p)
+            .replace(/[\\/]+$/, "")
+            .split(/[\\/]/)
+            .pop() || "";
+        const name = entry?.name || (rawPath ? leafOf(rawPath) : "");
         if (!rawPath && !name) return null;
         const isFolder =
           entry?.isFolder ??
-          core.looksLikeFolder({
-            ariaExpanded: row.getAttribute("aria-expanded"),
-            hasChevron: directChevron(row),
-            name: name || rawPath,
-          });
+          (/^(folder|directory)$/.test(itemType) ||
+            (rawPath ? /\/$/.test(rawPath) : false) ||
+            core.looksLikeFolder({
+              ariaExpanded: row.getAttribute("aria-expanded"),
+              hasChevron: directChevron(row),
+              name: name || rawPath,
+            }));
         if (!isFolder) return null;
         const cwd = cwdFor(row);
-        const rel = rawPath || name;
+        const rel = (rawPath || name).replace(/\/+$/, "");
         // Refuse to hand back a relative path: without a cwd root, a
         // workspace-relative entry would copy a useless fragment.
         if (!cwd && !isAbsolutePathLike(rel)) return null;
