@@ -315,6 +315,8 @@ function isInjectablePage(target: Target): boolean {
   const url = (target.url ?? "").toLowerCase();
   const title = (target.title ?? "").toLowerCase();
   if (url.includes("devtools") || title.includes("devtools")) return false;
+  // Unloaded prewarm tabs (about:blank) deny localStorage and abort injection.
+  if (url === "" || url === "about:blank") return false;
   return url.includes("codex") || title.includes("codex") || !url.includes("localhost");
 }
 
@@ -322,7 +324,11 @@ function injectablePages(targets: Target[]): Target[] {
   const matchingPages = targets.filter(isInjectablePage);
   if (matchingPages.length) return matchingPages;
   const pageTargets = targets.filter((t) => t.type === "page");
-  return pageTargets.filter((p) => p.webSocketDebuggerUrl && !(p.url ?? "").toLowerCase().includes("devtools"));
+  return pageTargets.filter((p) => {
+    if (!p.webSocketDebuggerUrl) return false;
+    const url = (p.url ?? "").toLowerCase();
+    return !url.includes("devtools") && url !== "" && url !== "about:blank";
+  });
 }
 
 function targetLabel(target: Target): string {
