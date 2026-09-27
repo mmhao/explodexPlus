@@ -108,6 +108,7 @@
         btn.setAttribute(BTN_ATTR, "true");
         btn.setAttribute("aria-label", "Copy folder path");
         btn.title = absolutePath;
+        btn.dataset.explodexPath = absolutePath;
         btn.textContent = "⧉";
         btn.className = "explodex-copy-path-btn";
         // Act on pointerdown: row-level React handlers may re-render on their
@@ -117,7 +118,8 @@
           event.stopPropagation();
           event.stopImmediatePropagation();
           if (event.button !== 0) return;
-          flash(btn, await copyToClipboard(absolutePath));
+          const path = btn.dataset.explodexPath;
+          if (path) flash(btn, await copyToClipboard(path));
         });
         btn.addEventListener("click", (event) => {
           event.preventDefault();
@@ -180,41 +182,66 @@
         panel.style.visibility = "";
       }
 
-      function resolveRow(row) {
+      function directChevron(row) {
+        // Only svgs within two levels count as the row's own twisty; a subtree
+        // match lets a whole list container "look like" a single folder row.
+        for (const svg of row.querySelectorAll("svg")) {
+          if (svg.parentElement?.parentElement === row || svg.parentElement === row) return true;
+        }
+        return false;
+      }
+
+      function isRowSized(el) {
+        const h = el.getBoundingClientRect().height;
+        return h >= 8 && h <= 56;
+      }
+
+      // Resolves a folder row to an absolute path — strictly from React-fiber
+      // entry data or data-* attributes. textContent is never used: a
+      // mis-matched container's text mixes sibling labels and our own button
+      // glyphs into a bogus name (real bug: "...\\筛选文件⧉⧉⧉").
+      function folderAbsolute(row) {
         const entry = entryFor(row);
-        const rawPath =
-          entry?.path ??
-          row.getAttribute("data-file-path") ??
-          row.getAttribute("data-path") ??
-          row.getAttribute("data-folder-path");
-        const label = (entry?.name ?? row.textContent ?? "").trim().slice(0, 120);
-        if (!looksLikeFolder(row, entry, label)) return null;
-        const absolute = rawPath ? core.joinPath(cwdFor(row), rawPath) : core.joinPath(cwdFor(row), label);
-        return absolute ?? null;
+        const attrPath =
+          row.getAttribute("data-file-path") ||
+          row.getAttribute("data-path") ||
+          row.getAttribute("data-folder-path") ||
+          "";
+        const rawPath = entry?.path || attrPath;
+        const name = entry?.name || "";
+        if (!rawPath && !name) return null;
+        const isFolder =
+          entry?.isFolder ??
+          core.looksLikeFolder({
+            ariaExpanded: row.getAttribute("aria-expanded"),
+            hasChevron: directChevron(row),
+            name: name || rawPath,
+          });
+        if (!isFolder) return null;
+        const absolute = core.joinPath(cwdFor(row), rawPath || name);
+        if (absolute) {
+          const dbg = (global.__explodexFcpDebug = global.__explodexFcpDebug || []);
+          dbg.push({ absolute, tag: row.tagName, cls: String(row.className).slice(0, 40) });
+          if (dbg.length > 40) dbg.shift();
+        }
+        return absolute || null;
       }
 
       function onContextMenu(event) {
         const panel = event.target.closest?.('[data-app-shell-focus-area="right-panel"]');
         if (!panel) return;
-        const row = event.target.closest(ROW_SELECTOR);
+        let node = event.target;
         let absolute = null;
-        if (row) {
-          absolute = resolveRow(row);
-        } else {
-          // The tree may not match our selectors; walk up from the cursor for a
-          // fiber that resolves to a folder entry.
-          let node = event.target;
-          for (let hop = 0; hop < 6 && node && node !== panel; hop += 1, node = node.parentElement) {
-            absolute = resolveRow(node);
-            if (absolute) break;
-          }
+        for (let hop = 0; hop < 8 && node && panel.contains(node); hop += 1, node = node.parentElement) {
+          absolute = folderAbsolute(node);
+          if (absolute) break;
         }
         if (!absolute) return;
         event.preventDefault();
         event.stopPropagation();
         showMenuAt(event.clientX, event.clientY, [
           {
-            label: "Copy path",
+            label: `Copy path — ${absolute.split(/[\\/]/).pop()}`,
             path: absolute,
             onClick: async () => {
               await copyToClipboard(absolute);
@@ -223,39 +250,39 @@
         ]);
       }
 
-      function looksLikeFolder(row, entry, name) {
-        if (entry?.isFolder) return true;
-        const hasChevron = !!row.querySelector(
-          'svg[class*="rotate"], svg[class*="chevron"], [class*="expand"] svg',
-        );
-        return core.looksLikeFolder({
-          ariaExpanded: row.getAttribute("aria-expanded"),
-          hasChevron,
-          name: entry?.name ?? name,
-        });
-      }
-
-      function decorateRow(row) {
-        if (row.querySelector(`:scope > [${BTN_ATTR}], :scope > * > [${BTN_ATTR}]`)) return;
-        const absolute = resolveRow(row);
+      function decorateRow(row, claimed) {
+        const existing = [...row.querySelectorAll(`[${BTN_ATTR}]`)];
+        if (row.parentElement?.closest(`[${ROW_MARK}]`) || !isRowSized(row)) {
+          for (const b of existing) b.remove();
+          return;
+        }
+        const absolute = folderAbsolute(row);
         if (!absolute) return;
+        if (claimed.has(absolute)) {
+          // Nested duplicate candidate for an already-decorated row.
+          for (const b of existing) b.remove();
+          return;
+        }
+        claimed.add(absolute);
         row.setAttribute(ROW_MARK, "true");
-        row.appendChild(makeButton(absolute));
+        const btn = existing[0] ?? makeButton(absolute);
+        for (const extra of existing.slice(1)) extra.remove();
+        btn.dataset.explodexPath = absolute;
+        btn.title = absolute;
+        if (btn.parentElement !== row) row.appendChild(btn);
       }
 
       function scan() {
         if (disposed) return;
+        const claimed = new Set();
         for (const panel of document.querySelectorAll('[data-app-shell-focus-area="right-panel"]')) {
           let rows = [...panel.querySelectorAll(ROW_SELECTOR)];
           if (!rows.length) {
             // Selector miss on this Codex build: fall back to a React-fiber
-            // sweep so folder detection does not depend on the row markup.
-            // Outermost match wins; its descendants are skipped.
-            rows = [...panel.querySelectorAll("div")].filter(
-              (el) => reactFiber(el) && !el.closest(`[${ROW_MARK}]`),
-            );
+            // sweep; the row-size guard keeps containers out.
+            rows = [...panel.querySelectorAll("div")].filter((el) => reactFiber(el));
           }
-          for (const row of rows) decorateRow(row);
+          for (const row of rows) decorateRow(row, claimed);
         }
       }
 
@@ -272,13 +299,12 @@
         ".explodex-copy-path-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);" +
         "border:0;background:transparent;color:inherit;opacity:0;cursor:pointer;font-size:12px;" +
         "padding:2px 4px;border-radius:4px;line-height:1}" +
-        "[role=treeitem]:hover .explodex-copy-path-btn," +
-        "[data-file-path]:hover .explodex-copy-path-btn," +
-        "[data-path]:hover .explodex-copy-path-btn{opacity:.7}" +
+        `[${ROW_MARK}]:hover .explodex-copy-path-btn{opacity:.7}` +
         ".explodex-copy-path-btn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 12%,transparent)}";
 
       let styleEl = null;
       function ensureStyles() {
+        document.getElementById("explodex-folder-copy-path-styles")?.remove();
         styleEl = document.createElement("style");
         styleEl.id = "explodex-folder-copy-path-styles";
         styleEl.textContent = STYLE_TEXT;
@@ -286,6 +312,10 @@
       }
 
       ensureStyles();
+      // Purge buttons left by an earlier (buggy) registration: their closures
+      // carry wrong paths. Re-decorated rows re-create them immediately.
+      for (const stale of document.querySelectorAll(`[${BTN_ATTR}]`)) stale.remove();
+      for (const staleRow of document.querySelectorAll(`[${ROW_MARK}]`)) staleRow.removeAttribute(ROW_MARK);
       bodyObserver = new MutationObserver(scheduleScan);
       bodyObserver.observe(document.body, { childList: true, subtree: true });
       document.addEventListener("contextmenu", onContextMenu, true);

@@ -154,7 +154,9 @@
         ".explodex-group-add:hover{background:color-mix(in srgb,currentColor 8%,transparent);opacity:.9}" +
         ".explodex-group-movebtn{flex:none;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.55;padding:0 5px;font-size:13px;line-height:1;border-radius:4px}" +
         "[data-app-action-sidebar-project-id]:hover .explodex-group-movebtn{opacity:.85}" +
-        ".explodex-group-movebtn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 14%,transparent)}";
+        ".explodex-group-movebtn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 14%,transparent)}" +
+        // Nesting cue for projects inside a group: indented with a guide rail.
+        ".explodex-in-group{padding-left:18px;border-left:1px solid color-mix(in srgb,currentColor 16%,transparent);margin-left:7px}";
 
       function ensureStyles() {
         let style = document.getElementById("explodex-project-groups-styles");
@@ -333,6 +335,7 @@
           if (!entry) continue;
           ensureMoveButton(entry.header, entry.id);
           const gid = state.membership[entry.id];
+          entry.block.classList.toggle("explodex-in-group", Boolean(gid));
           setBlockHidden(entry.block, !!(gid && collapsed.has(gid)));
           if (container && entry.block.parentElement === container) desired.push(entry.block);
         }
@@ -620,7 +623,10 @@
         global.removeEventListener("keydown", onKeyDown, true);
         global.removeEventListener("pointerdown", onGlobalPointerDown, true);
         global.removeEventListener("scroll", closeMenu, true);
-        for (const entry of projectEntries()) setBlockHidden(entry.block, false);
+        for (const entry of projectEntries()) {
+          setBlockHidden(entry.block, false);
+          entry.block.classList.remove("explodex-in-group");
+        }
         for (const el of document.querySelectorAll(
           "[data-explodex-group-header],[data-explodex-group-add],[data-explodex-group-move]",
         )) {
