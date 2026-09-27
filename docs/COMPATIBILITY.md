@@ -64,6 +64,12 @@ state; the filter is an exact `^chatgpt$` match now.
 projects nav — groups silently disappear. The root is therefore derived from a
 project header, which exists in every locale.
 
+Event model: ▦ opens the move menu on `pointerdown` (capture-phase React row
+handlers kill `click`), and right-click opens the same menu via a single
+document-level capture listener (per-row listeners survive hot re-injection
+and serve stale menus). Menu items: Ungrouped + groups only — group creation
+lives on the "+ New group" row.
+
 ## folder-copy-path
 
 | Selector / attribute | Used for |
@@ -73,6 +79,18 @@ project header, which exists in every locale.
 | fiber props: `path` / `absolutePath` / `fullPath`, `entry`/`file`/`node`/`item` wrappers, `type:"directory"`, `isFolder`, `children` | path + folder detection (multi-shape on purpose) |
 | fiber prop `cwd` (also `workspaceRoot`) | absolute-path join root; seen on Files pane ancestors |
 | `aria-expanded` / extensionless label | folder heuristic fallback |
+
+Context-menu ("Copy path") works app-wide (right panel **and** chat
+diff/changed-files lists) by walking 10 ancestors from the click point and
+resolving strictly from fiber entry / `data-*` path props — textContent is
+never used (root cause of the `...\筛选文件⧉⧉⧉` bug). Rows without a resolvable
+absolute path (or without a cwd for relative ones) are skipped; resolutions
+and per-hop fiber-key misses land in `window.__explodexFcpDebug`.
+
+Known issue (mitigated): hot re-injecting a plugin while an old instance is
+still alive can race two in-memory state copies and lose a write (observed:
+a user group vanished after double injection). Single-instance runs are safe;
+prefer launcher restart over repeated `inject` when state churn is involved.
 
 **Not yet live-verified (needs a session with an active runtime):** the Files
 tree only populates rows once the project runtime is alive; with an idle

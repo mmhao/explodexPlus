@@ -19,7 +19,15 @@
 - project-groups sidebar root is locale-proof (derived from project rows via
   `closest("nav")`); groups no longer vanish when the Codex UI is non-English.
 - project-groups "move to group" (▦) button is always visible on project rows
-  (was hover-only with `opacity:0`, undiscoverable).
+  (was hover-only with `opacity:0`, undiscoverable); grouped projects are
+  indented with a guide rail; the project menu no longer offers "New group…"
+  (creation lives on the "+ New group" row); the row context menu is a single
+  document-level listener so hot re-injection can't leave stale handlers.
+- folder-copy-path: bogus copied paths built from row textContent
+  (`...\筛选文件⧉⧉⧉`) — paths now resolve strictly from React-fiber entry or
+  `data-*` attributes, nested duplicates are deduped per absolute path, list
+  containers are excluded by a row-size guard, and right-click "Copy path"
+  works app-wide (right panel and chat file lists alike).
 
 ## [explodex-plus 0.1.0] - 2026-09-27
 
