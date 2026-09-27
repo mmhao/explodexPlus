@@ -1,0 +1,45 @@
+name: "Bug report"
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Check [docs/COMPATIBILITY.md](../blob/main/docs/COMPATIBILITY.md) first — if your Codex version is not listed, use the "Broken after Codex update" template instead.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: OS, Codex app version and `explodex-plus --version` (Codex version is also shown in the 💥 Explodex settings page)
+      placeholder: "Windows 11 26100 / Codex 26.924.2738.0 / explodex-plus 0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [launcher / CLI, Windows platform adapter, plugin: project-groups, plugin: folder-copy-path, SDK / injection, other upstream plugin, docs]
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Launch via ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Launcher log (%LOCALAPPDATA%\Explodex\logs\launcher.log on Windows) and any DevTools console errors. Paste as text, not screenshots.
+      render: shell

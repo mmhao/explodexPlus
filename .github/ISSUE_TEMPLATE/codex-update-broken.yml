@@ -1,0 +1,52 @@
+name: "Broken after Codex update"
+description: A plugin or feature stopped working after the Codex app updated
+labels: [codex-update]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Codex updates never delete your mods, but they can change the DOM the plugins hook into. See [docs/COMPATIBILITY.md](../blob/main/docs/COMPATIBILITY.md) for the selector registry.
+  - type: input
+    id: codex-version
+    attributes:
+      label: Codex version — old → new
+      description: Shown in the 💥 Explodex settings page (or Windows Settings → Apps). Both versions help if you know them.
+      placeholder: "26.924.2738.0 → 26.x.y.z"
+    validations:
+      required: true
+  - type: input
+    id: explodex-version
+    attributes:
+      label: explodex-plus version
+      description: "`explodex-plus --version`"
+    validations:
+      required: true
+  - type: dropdown
+    id: affected
+    attributes:
+      label: Affected features
+      multiple: true
+      options: [project-groups, folder-copy-path, other bundled plugin, Explodex settings page, SDK injection itself (nothing appears)]
+    validations:
+      required: true
+  - type: textarea
+    id: symptoms
+    attributes:
+      label: What stopped working?
+      description: Exact visible behavior (missing buttons, sidebar corruption, console errors).
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Console log excerpts
+      description: |
+        Codex was launched by the Explodex launcher, so you can open DevTools (Ctrl+Shift+I) in the Codex window. Copy any `[explodex]` / plugin errors from the Console.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: dom-snippet
+    attributes:
+      label: DOM snippet of the broken area (optional but gold)
+      description: In DevTools, right-click the affected UI → Copy → Copy outerHTML, and paste a trimmed snippet here.

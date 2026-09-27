@@ -1,0 +1,27 @@
+name: "Feature request"
+description: Suggest an idea or a new plugin
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      placeholder: I want to ... but currently ...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should it behave? Keep it concrete; screenshots of similar tools welcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where would it live?
+      options: [a new plugin, project-groups, folder-copy-path, Windows platform adapter / launcher, upstream SDK (would propose to dan-dr/explodex too)]
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
