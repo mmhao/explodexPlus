@@ -2483,6 +2483,7 @@
       "effort-shortcuts": true,
       "project-pins": true,
       "project-groups": true,
+      "folder-copy-path": true,
       "feature-flags-playground": true,
       "project-colors": true,
     };

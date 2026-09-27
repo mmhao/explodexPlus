@@ -1,0 +1,10 @@
+{
+  "id": "folder-copy-path",
+  "name": "Folder Copy Path",
+  "version": "0.1.0",
+  "entry": "index.js",
+  "scripts": ["logic.js", "index.js"],
+  "description": "Give folders in the Files panel the same Copy path affordance files already have.",
+  "dynamicLoadable": true,
+  "dynamicUnloadable": true
+}
