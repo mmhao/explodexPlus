@@ -37,6 +37,7 @@
       let disposed = false;
       let scanTimer = null;
       let bodyObserver = null;
+      const shadowObservers = new Map();
 
       function reactFiber(node) {
         if (!node || typeof node !== "object") return null;
@@ -243,18 +244,85 @@
         return p ? Object.keys(p).slice(0, 14) : null;
       }
 
+      // Codex's file tree is a <file-tree-container> custom element with a
+      // shadow root: plain queries and retargeted event targets stop at the
+      // host, so scanning pierces shadow roots and menus use composedPath().
+      function treeRoots() {
+        const roots = [...document.querySelectorAll('[data-app-shell-focus-area="right-panel"]')];
+        for (const host of document.querySelectorAll("file-tree-container")) {
+          if (host.shadowRoot && !roots.includes(host.shadowRoot)) roots.push(host.shadowRoot);
+        }
+        return roots;
+      }
+
+      function ensureStylesIn(node) {
+        const root = node && typeof node.getElementById === "function" ? node : document.head;
+        if (!root.getElementById || root.getElementById("explodex-folder-copy-path-styles")) return;
+        const style = document.createElement("style");
+        style.id = "explodex-folder-copy-path-styles";
+        style.textContent = STYLE_TEXT;
+        root.appendChild(style);
+      }
+
+      function observeShadow(host) {
+        if (!host.shadowRoot || shadowObservers.has(host)) return;
+        const obs = new MutationObserver(scheduleScan);
+        obs.observe(host.shadowRoot, { childList: true, subtree: true });
+        shadowObservers.set(host, obs);
+      }
+
+      function dumpShadowOnce(host) {
+        if (global.__explodexFcpShadowDump || !host.shadowRoot) return;
+        try {
+          const rows = [...host.shadowRoot.querySelectorAll("div,span")].slice(0, 300);
+          const samples = [];
+          for (const el of rows) {
+            const fk = Object.keys(el).find((k) => k.startsWith("__reactFiber"));
+            let propInfo = null;
+            if (fk) {
+              let f = el[fk];
+              for (let d = 0; d < 6 && f; d += 1, f = f.return) {
+                const p = f.memoizedProps;
+                if (p && Object.keys(p).length > 3) {
+                  propInfo = Object.keys(p).slice(0, 16);
+                  break;
+                }
+              }
+            }
+            samples.push({
+              tag: el.tagName,
+              text: (el.textContent || "").trim().slice(0, 24),
+              attrs: [...el.attributes].map((a) => a.name).slice(0, 8),
+              propInfo,
+            });
+            if (samples.length >= 14) break;
+          }
+          global.__explodexFcpShadowDump = {
+            html: host.shadowRoot.innerHTML.slice(0, 4000),
+            samples,
+            hostProps: Object.keys(host).slice(0, 20),
+          };
+        } catch (err) {
+          global.__explodexFcpShadowDump = { error: String(err) };
+        }
+      }
+
       function onContextMenu(event) {
-        // Whole-app scope: Codex shows folder lists in the right panel AND
-        // inline in chat (diff/"changed files" blocks). Walking up from the
-        // cursor is cheap, so we don't need a scan to cover those too.
-        let node = event.target;
+        // composedPath() reaches shadow rows that document-level listeners
+        // otherwise only see as the retargeted host element.
+        const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
         let absolute = null;
         const miss = [];
-        for (let hop = 0; hop < 10 && node && node !== document.body; hop += 1, node = node.parentElement) {
-          absolute = folderAbsolute(node);
+        let seen = 0;
+        for (const node of path) {
+          if (!node || node.nodeType !== 1) continue;
           if (absolute) break;
-          const keys = node.tagName ? fiberKeys(node) : null;
+          seen += 1;
+          absolute = folderAbsolute(node);
+          if (absolute) continue;
+          const keys = fiberKeys(node);
           if (keys) miss.push(`${node.tagName}:${keys.join(",")}`);
+          if (seen >= 16) break;
         }
         if (!absolute) {
           if (miss.length) {
@@ -297,17 +365,22 @@
         btn.dataset.explodexPath = absolute;
         btn.title = absolute;
         if (btn.parentElement !== row) row.appendChild(btn);
+        ensureStylesIn(row.getRootNode());
       }
 
       function scan() {
         if (disposed) return;
+        for (const host of document.querySelectorAll("file-tree-container")) {
+          dumpShadowOnce(host);
+          observeShadow(host);
+        }
         const claimed = new Set();
-        for (const panel of document.querySelectorAll('[data-app-shell-focus-area="right-panel"]')) {
-          let rows = [...panel.querySelectorAll(ROW_SELECTOR)];
+        for (const root of treeRoots()) {
+          let rows = [...root.querySelectorAll(ROW_SELECTOR)];
           if (!rows.length) {
             // Selector miss on this Codex build: fall back to a React-fiber
             // sweep; the row-size guard keeps containers out.
-            rows = [...panel.querySelectorAll("div")].filter((el) => reactFiber(el));
+            rows = [...root.querySelectorAll("div")].filter((el) => reactFiber(el));
           }
           for (const row of rows) decorateRow(row, claimed);
         }
@@ -354,6 +427,8 @@
         disposed = true;
         if (scanTimer != null) global.clearTimeout(scanTimer);
         bodyObserver?.disconnect();
+        for (const obs of shadowObservers.values()) obs.disconnect();
+        shadowObservers.clear();
         document.removeEventListener("contextmenu", onContextMenu, true);
         closeMenu();
         for (const btn of document.querySelectorAll(`[${BTN_ATTR}]`)) btn.remove();
