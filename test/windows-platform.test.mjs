@@ -7,7 +7,7 @@ import {
   portOwnedByCodex,
   parseCodexRunning,
   debugPortArg,
-  startProcessScript,
+  activationScript,
   installedCodexEnvironment,
 } from "../lib/platform/windows.mjs";
 
@@ -72,11 +72,24 @@ describe("launch argument construction", () => {
   test("builds the debug port flag", () => {
     expect(debugPortArg(9333)).toBe("--remote-debugging-port=9333");
   });
-  test("single-quotes the exe path and escapes embedded quotes", () => {
-    const script = startProcessScript("C:\\app\\ChatGPT.exe", 9333);
-    expect(script).toContain("Start-Process");
-    expect(script).toContain("'C:\\app\\ChatGPT.exe'");
-    expect(script).toContain("--remote-debugging-port=9333");
+  test("activates via shell:AppsFolder so the app keeps its MSIX identity", () => {
+    const script = activationScript("OpenAI.Codex_2p2nqsd0c76g0!App", 9333);
+    expect(script).toContain("Shell.Application");
+    expect(script).toContain("ShellExecute('shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App', '--remote-debugging-port=9333')");
+  });
+  test("escapes quotes in the AUMID", () => {
+    expect(activationScript("a'b", 9333)).toContain("a''b");
+  });
+});
+
+describe("AUMID derivation", () => {
+  test("parseAppxPackage appends !App to the package family name", () => {
+    const json = JSON.stringify({ PackageName: "OpenAI.Codex", PackageFamilyName: "OpenAI.Codex_2p2nqsd0c76g0", Version: "1.0", InstallLocation: "C:\\pkg\\" });
+    expect(parseAppxPackage(json).aumid).toBe("OpenAI.Codex_2p2nqsd0c76g0!App");
+  });
+  test("missing family name yields null aumid", () => {
+    const json = JSON.stringify({ PackageName: "OpenAI.Codex", InstallLocation: "C:\\pkg\\" });
+    expect(parseAppxPackage(json).aumid).toBeNull();
   });
 });
 
