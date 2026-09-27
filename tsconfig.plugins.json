@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "checkJs": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true
+  },
+  "files": [
+    "sdk/explodex-sdk.d.ts",
+    "plugins/project-groups/types.d.ts",
+    "plugins/project-groups/logic.js",
+    "plugins/project-groups/index.js",
+    "plugins/folder-copy-path/types.d.ts",
+    "plugins/folder-copy-path/logic.js",
+    "plugins/folder-copy-path/index.js"
+  ]
+}

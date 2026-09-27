@@ -32,6 +32,7 @@ for json in package.json .mcp.json plugins/*/plugin.json; do
 done
 
 bun run --bun tsc -p sdk/tsconfig.json
+bun run --bun tsc -p tsconfig.plugins.json
 bun run build:npm
 bun test
 

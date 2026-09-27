@@ -409,6 +409,7 @@
         return panel;
       }
 
+      /** @param {{label: string, active?: boolean, onClick?: () => void}} opts */
       function menuItem({ label, active, onClick }) {
         const btn = document.createElement("button");
         btn.type = "button";
