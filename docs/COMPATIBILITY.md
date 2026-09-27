@@ -74,18 +74,29 @@ lives on the "+ New group" row.
 
 | Selector / attribute | Used for |
 | --- | --- |
+| `<file-tree-container>` (shadow root) | the tree UI is a custom element; plain queries stop at the host, so scanning pierces `host.shadowRoot` and menus walk `event.composedPath()` |
 | `[data-app-shell-focus-area="right-panel"]` | Files/Browser/Terminal panel root |
 | `[role="treeitem"], [data-file-path], [data-path], [data-folder-path]` | candidate file/folder rows |
-| fiber props: `path` / `absolutePath` / `fullPath`, `entry`/`file`/`node`/`item` wrappers, `type:"directory"`, `isFolder`, `children` | path + folder detection (multi-shape on purpose) |
+| any `data-*` attribute whose value contains `/` or `\` | bespoke path props on unknown builds |
+| fiber props: `path` / `absolutePath` / `fullPath` / `relPath` / `relativePath`, `entry`/`file`/`node`/`item`/`data`/`fileNode`/`folder` wrappers, `type:"directory"`, `isFolder`, `children` | path + folder detection (multi-shape on purpose) |
+| fiber hook `memoizedState` chains | entries the tree keeps in hook state rather than props (field triage: data sat on a great-grandparent DOM node) |
 | fiber prop `cwd` (also `workspaceRoot`) | absolute-path join root; seen on Files pane ancestors |
 | `aria-expanded` / extensionless label | folder heuristic fallback |
 
 Context-menu ("Copy path") works app-wide (right panel **and** chat
-diff/changed-files lists) by walking 10 ancestors from the click point and
-resolving strictly from fiber entry / `data-*` path props — textContent is
-never used (root cause of the `...\筛选文件⧉⧉⧉` bug). Rows without a resolvable
-absolute path (or without a cwd for relative ones) are skipped; resolutions
-and per-hop fiber-key misses land in `window.__explodexFcpDebug`.
+diff/changed-files lists) by walking up to 16 `composedPath()` hops from the
+right-click and resolving strictly from fiber entry / `data-*` path props —
+textContent is never used (root cause of the `...\筛选文件⧉⧉⧉` bug). Rows without
+a resolvable absolute path (or without a cwd for relative ones) are skipped;
+resolutions and per-hop fiber-key misses land in `window.__explodexFcpDebug`.
+
+Self-reporting triage (when a build's row shape is still unknown): the plugin
+captures `window.__explodexFcpShadowDump` once the tree mounts (shadow HTML,
+row samples, host + 4 ancestors with fiber prop keys) and
+`window.__explodexFcpPathDump` on the first right-click inside the tree
+(whole `composedPath()`, per-hop attrs/shadow origin/fiber keys, row text).
+Report those two objects after a failed right-click and the extraction can be
+patched without another round-trip.
 
 Known issue (mitigated): hot re-injecting a plugin while an old instance is
 still alive can race two in-memory state copies and lose a write (observed:

@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- cdp-inject: an empty `about:blank` prewarm tab passed the page-target
+  filter; evaluating the SDK there throws `SecurityError` (localStorage
+  access denied), which aborted injection before the real renderer was ever
+  reached. Blank tabs are now skipped in both filter paths.
 - project-groups: the move-to-group menu now opens on `pointerdown` (real
   mouse clicks were swallowed by the React row button's capture-phase
   handlers before `click` could land) and also on right-click of the project
@@ -10,7 +14,12 @@
 - folder-copy-path: copy button acts on `pointerdown` for the same reason;
   right-clicking a folder row now shows a "Copy path" menu; a React-fiber
   sweep fallback decorates folder rows when the tree markup matches none of
-  the known selectors.
+  the known selectors; the file-tree shadow root is pierced for scanning and
+  `composedPath()` is used for menus (rows live inside `<file-tree-container>`).
+- folder-copy-path: entry extraction now also walks hook `memoizedState`,
+  accepts `relPath`/`relativePath`/`label` and loose entry-valued props, and
+  scans arbitrary `data-*` attributes holding path-like values — field
+  triage showed the row data sits on a great-grandparent DOM node.
 - Windows launcher no longer wedges in "Quit Codex first" when
   `codex-windows-sandbox-service` or the `codex` CLI is running — only the
   `ChatGPT` UI process counts as Codex.
