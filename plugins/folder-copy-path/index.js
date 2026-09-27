@@ -31,6 +31,7 @@
 
       const ROW_SELECTOR = '[role="treeitem"],[data-file-path],[data-path],[data-folder-path]';
       const BTN_ATTR = "data-explodex-copy-path";
+      const ROW_MARK = "data-explodex-copy-path-row";
       const SCAN_DEBOUNCE_MS = 250;
 
       let disposed = false;
@@ -109,13 +110,117 @@
         btn.title = absolutePath;
         btn.textContent = "⧉";
         btn.className = "explodex-copy-path-btn";
-        btn.addEventListener("pointerdown", (event) => event.stopPropagation());
-        btn.addEventListener("click", async (event) => {
+        // Act on pointerdown: row-level React handlers may re-render on their
+        // capture-phase pointerdown, which kills the subsequent click event.
+        btn.addEventListener("pointerdown", async (event) => {
           event.preventDefault();
           event.stopPropagation();
+          event.stopImmediatePropagation();
+          if (event.button !== 0) return;
           flash(btn, await copyToClipboard(absolutePath));
         });
+        btn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
         return btn;
+      }
+
+      // --- context menu ---------------------------------------------------------
+
+      let menuWrap = null;
+
+      function closeMenu() {
+        menuWrap?.remove();
+        menuWrap = null;
+      }
+
+      function showMenuAt(cx, cy, items) {
+        closeMenu();
+        const backdrop = document.createElement("div");
+        backdrop.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:transparent";
+        backdrop.addEventListener("pointerdown", (event) => {
+          if (event.target === backdrop) closeMenu();
+        });
+        const panel = document.createElement("div");
+        panel.setAttribute("role", "menu");
+        panel.setAttribute("aria-label", "Folder actions");
+        panel.style.cssText =
+          "position:fixed;z-index:2147483647;min-width:180px;padding:4px;border-radius:10px;" +
+          "border:1px solid color-mix(in srgb, currentColor 14%, transparent);" +
+          "background:var(--color-bg-primary,#111);color:inherit;" +
+          "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
+          "font:13px/1.4 system-ui,-apple-system,sans-serif";
+        for (const item of items) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = item.label;
+          btn.title = item.path ?? "";
+          btn.style.cssText =
+            "display:block;width:100%;text-align:left;padding:8px 12px;border:0;background:transparent;" +
+            "color:inherit;font:13px system-ui,-apple-system,sans-serif;cursor:pointer;border-radius:6px";
+          btn.addEventListener("click", async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            closeMenu();
+            await item.onClick();
+          });
+          panel.appendChild(btn);
+        }
+        const wrap = document.createElement("div");
+        wrap.appendChild(backdrop);
+        wrap.appendChild(panel);
+        document.body.appendChild(wrap);
+        menuWrap = wrap;
+        panel.style.visibility = "hidden";
+        const w = panel.offsetWidth;
+        const h = panel.offsetHeight;
+        panel.style.left = `${Math.max(8, Math.min(cx, global.innerWidth - w - 8))}px`;
+        panel.style.top = `${Math.max(8, Math.min(cy, global.innerHeight - h - 8))}px`;
+        panel.style.visibility = "";
+      }
+
+      function resolveRow(row) {
+        const entry = entryFor(row);
+        const rawPath =
+          entry?.path ??
+          row.getAttribute("data-file-path") ??
+          row.getAttribute("data-path") ??
+          row.getAttribute("data-folder-path");
+        const label = (entry?.name ?? row.textContent ?? "").trim().slice(0, 120);
+        if (!looksLikeFolder(row, entry, label)) return null;
+        const absolute = rawPath ? core.joinPath(cwdFor(row), rawPath) : core.joinPath(cwdFor(row), label);
+        return absolute ?? null;
+      }
+
+      function onContextMenu(event) {
+        const panel = event.target.closest?.('[data-app-shell-focus-area="right-panel"]');
+        if (!panel) return;
+        const row = event.target.closest(ROW_SELECTOR);
+        let absolute = null;
+        if (row) {
+          absolute = resolveRow(row);
+        } else {
+          // The tree may not match our selectors; walk up from the cursor for a
+          // fiber that resolves to a folder entry.
+          let node = event.target;
+          for (let hop = 0; hop < 6 && node && node !== panel; hop += 1, node = node.parentElement) {
+            absolute = resolveRow(node);
+            if (absolute) break;
+          }
+        }
+        if (!absolute) return;
+        event.preventDefault();
+        event.stopPropagation();
+        showMenuAt(event.clientX, event.clientY, [
+          {
+            label: "Copy path",
+            path: absolute,
+            onClick: async () => {
+              await copyToClipboard(absolute);
+            },
+          },
+        ]);
       }
 
       function looksLikeFolder(row, entry, name) {
@@ -132,25 +237,25 @@
 
       function decorateRow(row) {
         if (row.querySelector(`:scope > [${BTN_ATTR}], :scope > * > [${BTN_ATTR}]`)) return;
-        const entry = entryFor(row);
-        const rawPath =
-          entry?.path ??
-          row.getAttribute("data-file-path") ??
-          row.getAttribute("data-path") ??
-          row.getAttribute("data-folder-path");
-        const label = (entry?.name ?? row.textContent ?? "").trim().slice(0, 120);
-        if (!looksLikeFolder(row, entry, label)) return;
-        if (!rawPath && !entry) return;
-
-        const absolute = rawPath ? core.joinPath(cwdFor(row), rawPath) : core.joinPath(cwdFor(row), label);
+        const absolute = resolveRow(row);
         if (!absolute) return;
+        row.setAttribute(ROW_MARK, "true");
         row.appendChild(makeButton(absolute));
       }
 
       function scan() {
         if (disposed) return;
         for (const panel of document.querySelectorAll('[data-app-shell-focus-area="right-panel"]')) {
-          for (const row of panel.querySelectorAll(ROW_SELECTOR)) decorateRow(row);
+          let rows = [...panel.querySelectorAll(ROW_SELECTOR)];
+          if (!rows.length) {
+            // Selector miss on this Codex build: fall back to a React-fiber
+            // sweep so folder detection does not depend on the row markup.
+            // Outermost match wins; its descendants are skipped.
+            rows = [...panel.querySelectorAll("div")].filter(
+              (el) => reactFiber(el) && !el.closest(`[${ROW_MARK}]`),
+            );
+          }
+          for (const row of rows) decorateRow(row);
         }
       }
 
@@ -183,6 +288,7 @@
       ensureStyles();
       bodyObserver = new MutationObserver(scheduleScan);
       bodyObserver.observe(document.body, { childList: true, subtree: true });
+      document.addEventListener("contextmenu", onContextMenu, true);
       scan();
 
       log.info("folder copy path attached");
@@ -191,7 +297,10 @@
         disposed = true;
         if (scanTimer != null) global.clearTimeout(scanTimer);
         bodyObserver?.disconnect();
+        document.removeEventListener("contextmenu", onContextMenu, true);
+        closeMenu();
         for (const btn of document.querySelectorAll(`[${BTN_ATTR}]`)) btn.remove();
+        for (const row of document.querySelectorAll(`[${ROW_MARK}]`)) row.removeAttribute(ROW_MARK);
         styleEl?.remove();
         log.info("teardown");
       };

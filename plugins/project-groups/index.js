@@ -239,16 +239,34 @@
         btn.type = "button";
         btn.setAttribute("data-explodex-group-move", "true");
         btn.className = "explodex-group-movebtn";
-        btn.title = "Move to group";
+        btn.title = "Move to group (or right-click the project row)";
         btn.textContent = "▦";
-        btn.addEventListener("pointerdown", (event) => event.stopPropagation());
+        // Open on pointerdown, not click: the project row is a React button whose
+        // capture-phase pointerdown can re-render the row, so the click event
+        // never lands on this button and click-only handlers silently die.
+        btn.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          if (event.button === 0) openProjectMenu(btn, projectId);
+        });
         btn.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          openProjectMenu(btn, projectId);
         });
         header.appendChild(btn);
+        ensureRowContextMenu(header, projectId);
         return btn;
+      }
+
+      function ensureRowContextMenu(header, projectId) {
+        if (header.dataset.explodexMoveCtx === "true") return;
+        header.dataset.explodexMoveCtx = "true";
+        header.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openProjectMenu(null, projectId, { x: event.clientX, y: event.clientY });
+        });
       }
 
       function setBlockHidden(block, hidden) {
@@ -386,6 +404,17 @@
         panel.style.visibility = "";
       }
 
+      function positionPanelAt(panel, cx, cy) {
+        panel.style.visibility = "hidden";
+        const width = panel.offsetWidth;
+        const height = panel.offsetHeight;
+        const x = Math.max(8, Math.min(cx, global.innerWidth - width - 8));
+        const y = Math.max(8, Math.min(cy, global.innerHeight - height - 8));
+        panel.style.left = `${x}px`;
+        panel.style.top = `${y}px`;
+        panel.style.visibility = "";
+      }
+
       function menuShell(label) {
         const backdrop = document.createElement("div");
         backdrop.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:transparent";
@@ -434,43 +463,49 @@
         return btn;
       }
 
-      function openMenu(anchor, label, build) {
+      function openMenu(anchor, label, build, at) {
         closeMenu();
         const panel = menuShell(label);
         build(panel);
-        positionPanel(panel, anchor);
+        if (at) positionPanelAt(panel, at.x, at.y);
+        else positionPanel(panel, anchor);
       }
 
-      function openPrompt(anchor, title, initial, onSubmit) {
-        openMenu(anchor, title, (panel) => {
-          const heading = document.createElement("div");
-          heading.textContent = title;
-          heading.style.cssText =
-            "padding:6px 10px 4px;opacity:.65;font-size:11px;text-transform:uppercase;letter-spacing:.05em";
-          panel.appendChild(heading);
+      function openPrompt(anchor, title, initial, onSubmit, at) {
+        openMenu(
+          anchor,
+          title,
+          (panel) => {
+            const heading = document.createElement("div");
+            heading.textContent = title;
+            heading.style.cssText =
+              "padding:6px 10px 4px;opacity:.65;font-size:11px;text-transform:uppercase;letter-spacing:.05em";
+            panel.appendChild(heading);
 
-          const input = document.createElement("input");
-          input.value = initial;
-          input.style.cssText =
-            "display:block;width:calc(100% - 20px);margin:2px 10px 8px;padding:6px 8px;border-radius:6px;" +
-            "border:1px solid color-mix(in srgb, currentColor 20%, transparent);" +
-            "background:color-mix(in srgb, currentColor 5%, transparent);color:inherit;font:13px system-ui,-apple-system,sans-serif";
-          input.addEventListener("keydown", (event) => {
-            event.stopPropagation();
-            if (event.key === "Enter") {
-              const value = input.value.trim();
-              if (value) {
+            const input = document.createElement("input");
+            input.value = initial;
+            input.style.cssText =
+              "display:block;width:calc(100% - 20px);margin:2px 10px 8px;padding:6px 8px;border-radius:6px;" +
+              "border:1px solid color-mix(in srgb, currentColor 20%, transparent);" +
+              "background:color-mix(in srgb, currentColor 5%, transparent);color:inherit;font:13px system-ui,-apple-system,sans-serif";
+            input.addEventListener("keydown", (event) => {
+              event.stopPropagation();
+              if (event.key === "Enter") {
+                const value = input.value.trim();
+                if (value) {
+                  closeMenu();
+                  onSubmit(value);
+                }
+              } else if (event.key === "Escape") {
                 closeMenu();
-                onSubmit(value);
               }
-            } else if (event.key === "Escape") {
-              closeMenu();
-            }
-          });
-          panel.appendChild(input);
-          requestAnimationFrame(() => input.focus());
-          input.select?.();
-        });
+            });
+            panel.appendChild(input);
+            requestAnimationFrame(() => input.focus());
+            input.select?.();
+          },
+          at,
+        );
       }
 
       function openGroupMenu(anchor, gid) {
@@ -498,36 +533,47 @@
         });
       }
 
-      function openProjectMenu(anchor, projectId) {
-        openMenu(anchor, "Move to group", (panel) => {
-          panel.appendChild(
-            menuItem({
-              label: "Ungrouped",
-              active: !state.membership[projectId],
-              onClick: () => commit(core.assignProject(state, projectId, null)),
-            }),
-          );
-          for (const group of state.groups) {
+      function openProjectMenu(anchor, projectId, at) {
+        openMenu(
+          anchor,
+          "Move to group",
+          (panel) => {
             panel.appendChild(
               menuItem({
-                label: group.name,
-                active: state.membership[projectId] === group.id,
-                onClick: () => commit(core.assignProject(state, projectId, group.id)),
+                label: "Ungrouped",
+                active: !state.membership[projectId],
+                onClick: () => commit(core.assignProject(state, projectId, null)),
               }),
             );
-          }
-          panel.appendChild(
-            menuItem({
-              label: "+ New group…",
-              onClick: () =>
-                openPrompt(anchor, "New group", "", (name) => {
-                  const created = core.createGroup(state, name);
-                  const group = created.groups[created.groups.length - 1];
-                  commit(core.assignProject(created, projectId, group?.id ?? null));
+            for (const group of state.groups) {
+              panel.appendChild(
+                menuItem({
+                  label: group.name,
+                  active: state.membership[projectId] === group.id,
+                  onClick: () => commit(core.assignProject(state, projectId, group.id)),
                 }),
-            }),
-          );
-        });
+              );
+            }
+            panel.appendChild(
+              menuItem({
+                label: "+ New group…",
+                onClick: () =>
+                  openPrompt(
+                    anchor,
+                    "New group",
+                    "",
+                    (name) => {
+                      const created = core.createGroup(state, name);
+                      const group = created.groups[created.groups.length - 1];
+                      commit(core.assignProject(created, projectId, group?.id ?? null));
+                    },
+                    at,
+                  ),
+              }),
+            );
+          },
+          at,
+        );
       }
 
       function onKeyDown(event) {

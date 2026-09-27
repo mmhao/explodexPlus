@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- project-groups: the move-to-group menu now opens on `pointerdown` (real
+  mouse clicks were swallowed by the React row button's capture-phase
+  handlers before `click` could land) and also on right-click of the project
+  row.
+- folder-copy-path: copy button acts on `pointerdown` for the same reason;
+  right-clicking a folder row now shows a "Copy path" menu; a React-fiber
+  sweep fallback decorates folder rows when the tree markup matches none of
+  the known selectors.
 - Windows launcher no longer wedges in "Quit Codex first" when
   `codex-windows-sandbox-service` or the `codex` CLI is running — only the
   `ChatGPT` UI process counts as Codex.
