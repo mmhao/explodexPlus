@@ -255,14 +255,14 @@
       // --- reorder --------------------------------------------------------------
 
       function applyOrder(container, desired) {
-        const tracked = desired.filter((el) => el && el.parentElement === container);
-        if (!tracked.length) return false;
+        const wanted = desired.filter(Boolean);
+        if (!wanted.length) return false;
 
         const children = [...container.children];
         const position = new Map(children.map((el, index) => [el, index]));
         let last = -1;
         let ordered = true;
-        for (const el of tracked) {
+        for (const el of wanted) {
           const at = position.get(el);
           if (at == null || at < last) {
             ordered = false;
@@ -273,9 +273,9 @@
         if (ordered) return false;
 
         let after = null;
-        for (let index = tracked.length - 1; index >= 0; index -= 1) {
-          container.insertBefore(tracked[index], after);
-          after = tracked[index];
+        for (let index = wanted.length - 1; index >= 0; index -= 1) {
+          container.insertBefore(wanted[index], after);
+          after = wanted[index];
         }
         return true;
       }
