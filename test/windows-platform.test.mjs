@@ -64,9 +64,15 @@ describe("port ownership", () => {
 });
 
 describe("codex running detection", () => {
-  test("true for ChatGPT or Codex process names", () => {
+  test("true only for the ChatGPT UI process", () => {
     expect(parseCodexRunning('["ChatGPT","chrome"]')).toBe(true);
-    expect(parseCodexRunning('{"ProcessName":"codex-windows-sandbox-service"}')).toBe(true);
+  });
+  test("background services and the CLI do not count as running", () => {
+    // codex-windows-sandbox-service is a SYSTEM service the user cannot quit;
+    // `codex` is the CLI. Neither should wedge the launcher on "Quit Codex".
+    expect(parseCodexRunning('{"ProcessName":"codex-windows-sandbox-service"}')).toBe(false);
+    expect(parseCodexRunning('["codex"]')).toBe(false);
+    expect(parseCodexRunning('["Codex Helper"]')).toBe(false);
   });
   test("false when empty", () => {
     expect(parseCodexRunning("[]")).toBe(false);
