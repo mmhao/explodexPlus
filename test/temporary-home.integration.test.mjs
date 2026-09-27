@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 let home;
+const IS_MAC = process.platform === "darwin";
 afterEach(async () => { if (home) await rm(home, { recursive: true, force: true }); });
 
-test("install-launcher works in a temporary HOME", async () => {
+test.skipIf(!IS_MAC)("install-launcher works in a temporary HOME", async () => {
   home = await mkdtemp(join(tmpdir(), "explodex-home-"));
   const root = join(import.meta.dir, "..");
   const linkedBin = join(home, "explodex");

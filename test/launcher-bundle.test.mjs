@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { generateLauncherBundle, installLauncher, isExplodexOwnedBundle } from "../lib/launcher-bundle.mjs";
 
 const roots = [];
+const IS_MAC = process.platform === "darwin";
 afterEach(async () => { await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true }))); });
 async function tempRoot() { const path = await mkdtemp(join(tmpdir(), "explodex-test-")); roots.push(path); return path; }
 
-describe("launcher generation", () => {
+describe.skipIf(!IS_MAC)("launcher generation", () => {
   test("writes a lightweight shell/JXA bundle and ownership marker", async () => {
     const root = await tempRoot();
     const app = join(root, "Explodex.app");

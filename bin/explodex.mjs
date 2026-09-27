@@ -7,7 +7,7 @@ import { realpathSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { parseArgs } from "node:util";
 import * as clack from "@clack/prompts";
-import { installLauncher, uninstallLauncher } from "../lib/launcher-bundle.mjs";
+import { installLauncher, uninstallLauncher } from "../lib/launcher.mjs";
 import { injectOnly, inspectState, launchFromApp, readPackageVersion } from "../lib/launch.mjs";
 import { notifyFromCache, refreshUpdateCache } from "../lib/version-check.mjs";
 import { getLauncherPath, pathExists } from "../lib/paths.mjs";
@@ -92,11 +92,21 @@ creating the app (run \`explodex install\` to add it later).
 }
 
 function openLauncher(path) {
+  const [file, args] =
+    process.platform === "win32" ? ["cmd.exe", ["/c", "start", "", path]] : ["open", [path]];
   return new Promise((resolve, reject) => {
-    const child = spawn("open", [path], { detached: true, stdio: "ignore" });
+    const child = spawn(file, args, { detached: true, stdio: "ignore" });
     child.once("error", reject);
     child.once("spawn", () => { child.unref(); resolve(); });
   });
+}
+
+async function codexInstalledDefault() {
+  if (process.platform === "win32") {
+    const { discoverCodex } = await import("../lib/platform/windows.mjs");
+    return Boolean(await discoverCodex());
+  }
+  return pathExists(CODEX_APP);
 }
 
 function resolveDependencies(overrides = {}) {
@@ -112,8 +122,8 @@ function resolveDependencies(overrides = {}) {
     notifyFromCache: overrides.notifyFromCache ?? notifyFromCache,
     openLauncher: overrides.openLauncher ?? openLauncher,
     launcherExists: overrides.launcherExists ?? (() => pathExists(getLauncherPath())),
-    systemLauncherExists: overrides.systemLauncherExists ?? (() => pathExists(getLauncherPath({ system: true }))),
-    codexInstalled: overrides.codexInstalled ?? (() => pathExists(CODEX_APP)),
+    systemLauncherExists: overrides.systemLauncherExists ?? (process.platform === "win32" ? () => Promise.resolve(false) : () => pathExists(getLauncherPath({ system: true }))),
+    codexInstalled: overrides.codexInstalled ?? codexInstalledDefault,
     hasRunBefore: overrides.hasRunBefore ?? (() => pathExists(join(homedir(), ".explodex"))),
     makeUi: overrides.makeUi ?? makeUi,
   };
@@ -153,7 +163,7 @@ function makeUi() {
   };
 }
 
-const WELCOME_NOTE = `Explodex wraps the Codex desktop app with a plugin SDK.
+const WELCOME_NOTE_MAC = `Explodex wraps the Codex desktop app with a plugin SDK.
 
 To open Codex with your plugins, Explodex uses a launcher app:
   - Creates a launcher app at ~/Applications/Explodex.app
@@ -161,6 +171,19 @@ To open Codex with your plugins, Explodex uses a launcher app:
   - Opens Explodex, which starts Codex with your plugins injected
 
 It does not modify, move, or re-sign Codex itself.`;
+
+const WELCOME_NOTE_WIN = `Explodex wraps the Codex desktop app with a plugin SDK.
+
+To open Codex with your plugins, Explodex creates a launcher shortcut:
+  - Adds a "Codex (Explodex)" shortcut to your Desktop and Start Menu
+  - Uses %USERPROFILE%\\.explodex for your plugins, wrapper, and logs
+  - The shortcut starts the Store Codex app with plugins injected
+
+It does not modify, move, or re-sign Codex itself.`;
+
+function welcomeNote() {
+  return process.platform === "win32" ? WELCOME_NOTE_WIN : WELCOME_NOTE_MAC;
+}
 
 // Describe what opening the launcher will do, based on the current Codex state.
 function describeState(state, port) {
@@ -193,7 +216,7 @@ async function runLaunch(parsed, deps, version) {
 
   const firstRun = !(await deps.hasRunBefore());
   if (firstRun) {
-    ui.note(WELCOME_NOTE, "Welcome");
+    ui.note(welcomeNote(), "Welcome");
     const skillInstalled = await deps.skillInstalled();
     if (!skillInstalled && (parsed.yes || ui.pretty)) {
       const install = parsed.yes || await ui.confirm("Install plugin creator skill (Recommended)");
@@ -229,7 +252,7 @@ async function runLaunch(parsed, deps, version) {
   if (ui.pretty && !parsed.yes) {
     ui.warn(`No launcher app found at ${target}.`);
     if (!(await deps.codexInstalled())) {
-      ui.warn(`Codex isn't installed at ${CODEX_APP}. Install Codex first — Explodex launches it but doesn't bundle it.`);
+      ui.warn(`Codex isn't installed. Install Codex first — Explodex launches it but doesn't bundle it.`);
     }
     const ok = await ui.confirm("Create the Explodex launcher app now?");
     if (!ok) {
