@@ -352,7 +352,7 @@
             "line-height:16px",
             "cursor:pointer",
             active
-              ? "background:var(--color-bg-primary, color-mix(in srgb, currentColor 14%, transparent));font-weight:600"
+              ? "background:var(--color-token-list-hover-background, color-mix(in srgb, currentColor 14%, transparent));font-weight:600"
               : "background:transparent;color:var(--color-text-tertiary, color-mix(in srgb, currentColor 55%, transparent))",
           ].join(";");
           return btn;

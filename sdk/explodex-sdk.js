@@ -478,8 +478,8 @@
         position: fixed; right: 12px; bottom: 12px; z-index: 2147483647;
         padding: 6px 10px; border-radius: 999px;
         border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-        background: color-mix(in srgb, var(--color-bg-primary,#1a1a1a) 92%, transparent);
-        color: inherit;
+        background: color-mix(in srgb, var(--color-token-bg-primary, var(--color-bg-primary, #1a1a1a)) 92%, transparent);
+        color: var(--color-token-foreground, inherit);
         font: 12px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         pointer-events: none;
         backdrop-filter: blur(8px);
@@ -536,8 +536,8 @@
         width: min(380px, calc(100vw - 24px)); max-height: min(70vh, 560px);
         overflow: hidden; display: flex; flex-direction: column; border-radius: 12px;
         border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-        background: var(--color-bg-primary, #111);
-        color: inherit;
+        background: var(--color-token-dropdown-background, var(--color-bg-primary, #111));
+        color: var(--color-token-dropdown-foreground, inherit);
         box-shadow: 0 12px 40px color-mix(in srgb, #000 45%, transparent);
         font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
@@ -559,7 +559,8 @@
       .ex-dialog {
         width: min(420px, 100%); border-radius: 12px; padding: 16px;
         border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-        background: var(--color-bg-primary, #111); color: inherit;
+        background: var(--color-token-dropdown-background, var(--color-bg-primary, #111));
+        color: var(--color-token-dropdown-foreground, inherit);
         box-shadow: 0 16px 48px color-mix(in srgb, #000 50%, transparent);
         font: 13px/1.45 system-ui, -apple-system, sans-serif;
       }
@@ -575,7 +576,8 @@
       }
       .ex-explodex-page {
         position: absolute; inset: 0; z-index: 24; overflow: auto;
-        background: var(--color-bg-primary, #111); color: inherit;
+        background: var(--color-token-bg-primary, var(--color-bg-primary, #111));
+        color: var(--color-token-foreground, inherit);
         font: 13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       .ex-explodex-page-inner {
@@ -643,7 +645,8 @@
       .ex-field-select {
         padding: 4px 8px; border-radius: 6px;
         border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-        background: var(--color-bg-primary, #111); color: inherit; font: inherit;
+        background: var(--color-token-dropdown-background, var(--color-bg-primary, #111));
+        color: var(--color-token-dropdown-foreground, inherit); font: inherit;
       }
       .ex-field-meta {
         font-size: 11px; line-height: 1.4;
@@ -2100,9 +2103,21 @@
     const buttons = root.querySelectorAll("button[aria-label]");
     for (const btn of buttons) {
       const aria = (btn.getAttribute("aria-label") ?? "").toLowerCase();
-      if (aria.includes("settings") || aria.includes("open settings")) return btn;
+      // zh-CN builds localize these ("打开个人资料菜单", "打开帮助菜单").
+      if (
+        aria.includes("settings") ||
+        aria.includes("open settings") ||
+        aria.includes("profile") ||
+        aria.includes("account") ||
+        aria.includes("设置") ||
+        aria.includes("个人资料") ||
+        aria.includes("账户") ||
+        aria.includes("帮助")
+      ) return btn;
     }
-    const footerHost = root.querySelector('[class*="absolute"][class*="bottom-0"]');
+    const footerHost = Array.from(
+      root.querySelectorAll('[class*="absolute"][class*="bottom-0"]'),
+    ).find(isFooterHostCandidate);
     return footerHost?.querySelector("button") ?? null;
   }
 
@@ -2140,14 +2155,41 @@
     );
   }
 
+  function isFooterHostCandidate(el) {
+    // 26.924 regression: every project block carries an empty drop-zone
+    // overlay whose classes also contain `absolute` + `bottom-0`, and the
+    // panel resizer (`group/panel-resizer … bottom-0 w-4`) matches too.
+    // Matching one of those mounted the plugin strip into a 16-32px-wide
+    // clipped column, turning "Flags: …" / "Usage: …" nav buttons into
+    // stray "F" / "U" letters over the sidebar rows. The real footer host
+    // spans the sidebar, is interactive (contains buttons), and never
+    // lives inside a project container nor wraps thread/project rows.
+    if (!el) return false;
+    if (el.closest("[data-sidebar-project-container-id]")) return false;
+    if (el.querySelector("[data-app-action-sidebar-project-id],[data-app-action-sidebar-thread-id]")) return false;
+    if (el.classList && el.classList.contains("pointer-events-none")) return false;
+    if (/[/-]resizer\b/i.test(String(el.className))) return false;
+    if (!el.querySelector("button")) return false;
+    return true;
+  }
+
   function findSidebarFooterHost(root = sidebarRoot()) {
     if (!root) return null;
     const btn = findProfileFooterButton(root);
     if (btn) {
-      const host = btn.closest('[class*="absolute"][class*="bottom-0"]');
-      if (host) return host;
+      for (
+        let host = btn.closest('[class*="absolute"][class*="bottom-0"]');
+        host;
+        host = host.parentElement?.closest('[class*="absolute"][class*="bottom-0"]') ?? null
+      ) {
+        if (isFooterHostCandidate(host)) return host;
+      }
     }
-    return root.querySelector('[class*="absolute"][class*="bottom-0"]');
+    const candidates = Array.from(
+      root.querySelectorAll('[class*="absolute"][class*="bottom-0"]'),
+    ).filter(isFooterHostCandidate);
+    // The footer lives after the scrollable thread list in DOM order.
+    return candidates[candidates.length - 1] || null;
   }
 
   function footerProfileRow(root = sidebarRoot()) {
@@ -2167,6 +2209,11 @@
     if (!host) return null;
 
     const existing = host.querySelector("[data-explodex-footer-plugins]");
+    // Sweep orphaned strips from earlier SDK builds (e.g. one mis-mounted
+    // inside a project drop-zone overlay) so they can't leak clipped text.
+    for (const stray of document.querySelectorAll("[data-explodex-footer-plugins]")) {
+      if (stray !== existing) stray.remove();
+    }
     if (existing) return existing;
 
     const strip = document.createElement("div");
@@ -2377,7 +2424,7 @@
       h.className = "ex-popover-title";
       h.textContent = title ?? "";
       const close = components.button({
-        label: "✕",
+        label: "×",
         color: "ghost",
         size: "iconSm",
         onClick: () => {

@@ -33,6 +33,10 @@
         '[role="treeitem"],[data-item-path],[data-file-path],[data-path],[data-folder-path]';
       const BTN_ATTR = "data-explodex-copy-path";
       const ROW_MARK = "data-explodex-copy-path-row";
+      const BTN_ICON_SVG =
+        '<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
+        '<rect x="1" y="3.2" width="7" height="7.8" rx="1.5"/>' +
+        '<path d="M3.6 1.2H11V8"/></svg>';
       const SCAN_DEBOUNCE_MS = 250;
 
       let disposed = false;
@@ -100,15 +104,22 @@
         // virtualized rows are DOM nodes with no React fiber of their own. The
         // pane's cwd lives on the host's fiber chain, so climb from the host.
         const root = typeof node?.getRootNode === "function" ? node.getRootNode() : null;
-        if (root instanceof ShadowRoot) {
+        if (root instanceof ShadowRoot && root.host && root.host !== node) {
           const cwd2 = cwdFor(root.host);
           if (cwd2) return cwd2;
         }
         // Fallback: the nearest ancestor that has a fiber (the custom-element host).
-        let el = node;
+        // Search each ancestor's fiber chain inline — calling cwdFor() on the
+        // starting node itself would re-enter with identical arguments and
+        // recurse until the stack overflows (real bug: RangeError at setup).
+        let el = node?.parentElement ?? null;
         for (let i = 0; i < 10 && el; i += 1, el = el.parentElement) {
           if (reactFiber(el)) {
-            const cwd3 = cwdFor(el);
+            let cwd3 = null;
+            walkFibers(el, (props) => {
+              cwd3 = readCwd(props);
+              return !!cwd3;
+            });
             if (cwd3) return cwd3;
           }
         }
@@ -137,9 +148,11 @@
       }
 
       function flash(btn, ok) {
-        btn.textContent = ok ? "✓" : "✕";
+        // √ / × are GB2312-safe; ✓ (U+2713) and ✕ (U+2715) tofu on some
+        // zh-CN Windows font stacks and read as stray letters.
+        btn.textContent = ok ? "√" : "×";
         global.setTimeout(() => {
-          if (!disposed && btn.isConnected) btn.textContent = "⧉";
+          if (!disposed && btn.isConnected) btn.innerHTML = BTN_ICON_SVG;
         }, 900);
       }
 
@@ -150,7 +163,9 @@
         btn.setAttribute("aria-label", "Copy folder path");
         btn.title = absolutePath;
         btn.dataset.explodexPath = absolutePath;
-        btn.textContent = "⧉";
+        // Inline SVG instead of the ⧉ glyph (U+29C9 is missing from common
+        // Windows system fonts and falls back to a tofu box).
+        btn.innerHTML = BTN_ICON_SVG;
         btn.className = "explodex-copy-path-btn";
         // Act on pointerdown: row-level React handlers may re-render on their
         // capture-phase pointerdown, which kills the subsequent click event.
@@ -191,7 +206,8 @@
         panel.style.cssText =
           "position:fixed;z-index:2147483647;min-width:180px;padding:4px;border-radius:10px;" +
           "border:1px solid color-mix(in srgb, currentColor 14%, transparent);" +
-          "background:var(--color-bg-primary,#111);color:inherit;" +
+          "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
+          "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
           "font:13px/1.4 system-ui,-apple-system,sans-serif";
         for (const item of items) {
@@ -273,6 +289,18 @@
             .pop() || "";
         const name = entry?.name || (rawPath ? leafOf(rawPath) : "");
         if (!rawPath && !name) return null;
+        // Hard file gate: Codex's native context menu already copies file
+        // paths, so a file row must return null and keep its native menu.
+        // This overrides entry.isFolder — fiber props sometimes mislabel a
+        // file as a folder (real bug: our menu replaced Codex's on
+        // manifest.json / yarn.lock rows). An explicit
+        // data-item-type="folder" still wins over the extension heuristic,
+        // since that attribute is Codex's own ground truth.
+        const leaf = leafOf(rawPath || name);
+        if (/^(file|link|symlink)$/i.test(itemType)) return null;
+        if (!/^(folder|directory)$/i.test(itemType) && /[^.]\.[A-Za-z0-9]{1,12}$/.test(leaf)) {
+          return null;
+        }
         const isFolder =
           entry?.isFolder ??
           (/^(folder|directory)$/.test(itemType) ||
@@ -509,7 +537,7 @@
       const STYLE_TEXT =
         ".explodex-copy-path-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);" +
         "border:0;background:transparent;color:inherit;opacity:0;cursor:pointer;font-size:12px;" +
-        "padding:2px 4px;border-radius:4px;line-height:1}" +
+        "padding:2px 4px;border-radius:4px;line-height:1;display:inline-flex;align-items:center;justify-content:center}" +
         `[${ROW_MARK}]:hover .explodex-copy-path-btn{opacity:.7}` +
         ".explodex-copy-path-btn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 12%,transparent)}";
 

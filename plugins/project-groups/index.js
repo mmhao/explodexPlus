@@ -144,7 +144,11 @@
       const STYLE_TEXT =
         ".explodex-group-header{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:8px 0 2px;border-radius:8px;cursor:pointer;user-select:none;opacity:.85;font:11px/1.4 system-ui,-apple-system,sans-serif;letter-spacing:.05em;text-transform:uppercase}" +
         ".explodex-group-header:hover{background:color-mix(in srgb,currentColor 8%,transparent);opacity:1}" +
-        ".explodex-group-chevron{width:12px;flex:none;text-align:center;opacity:.7}" +
+        ".explodex-group-chevron{width:12px;flex:none;display:inline-flex;align-items:center;justify-content:center;opacity:.7}" +
+        // CSS triangle instead of ▸/▾ glyphs — small geometric triangles are
+        // missing from GB2312-era CJK fonts and tofu-render as stray letters.
+        '.explodex-group-chevron::before{content:"";width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid currentColor;transition:transform 120ms ease}' +
+        '.explodex-group-chevron[data-collapsed="true"]::before{transform:rotate(-90deg)}' +
         ".explodex-group-color{width:8px;height:8px;border-radius:999px;flex:none}" +
         ".explodex-group-name{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
         ".explodex-group-count{flex:none;opacity:.5;font-size:10px}" +
@@ -152,7 +156,10 @@
         ".explodex-group-header:hover .explodex-group-menubtn{opacity:.7}" +
         ".explodex-group-add{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:4px 0;border-radius:8px;cursor:pointer;opacity:.55;font:11px/1.4 system-ui,-apple-system,sans-serif;letter-spacing:.05em;text-transform:uppercase}" +
         ".explodex-group-add:hover{background:color-mix(in srgb,currentColor 8%,transparent);opacity:.9}" +
-        ".explodex-group-movebtn{flex:none;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.55;padding:0 5px;font-size:13px;line-height:1;border-radius:4px}" +
+        ".explodex-group-add-inline{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:inherit;opacity:0;cursor:pointer;font-size:13px;line-height:1;padding:2px 6px;border-radius:6px}" +
+        "button[class*='group/section-toggle']:hover .explodex-group-add-inline,button[class*='group/section-toggle']:focus-visible .explodex-group-add-inline{opacity:.7}" +
+        ".explodex-group-add-inline:hover{opacity:1!important;background:color-mix(in srgb,currentColor 10%,transparent)}" +
+        ".explodex-group-movebtn{flex:none;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.55;padding:0 5px;font-size:13px;line-height:1;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}" +
         "[data-app-action-sidebar-project-id]:hover .explodex-group-movebtn{opacity:.85}" +
         ".explodex-group-movebtn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 14%,transparent)}" +
         // Nesting cue for projects inside a group: indented with a guide rail.
@@ -183,7 +190,7 @@
             '<span class="explodex-group-color"></span>' +
             '<span class="explodex-group-name"></span>' +
             '<span class="explodex-group-count"></span>' +
-            '<button type="button" class="explodex-group-menubtn" data-explodex-group-menubtn="true" title="Group options">⋯</button>';
+            '<button type="button" class="explodex-group-menubtn" data-explodex-group-menubtn="true" title="Group options">…</button>';
 
           const gid = item.id;
           el.addEventListener("click", (event) => {
@@ -206,7 +213,9 @@
         }
 
         const collapsed = !!item.collapsed;
-        el.querySelector(".explodex-group-chevron").textContent = collapsed ? "▸" : "▾";
+        const chevron = el.querySelector(".explodex-group-chevron");
+        chevron.textContent = ""; // older builds put a ▸/▾ glyph here
+        chevron.setAttribute("data-collapsed", collapsed ? "true" : "false");
         const nameEl = el.querySelector(".explodex-group-name");
         if (nameEl.textContent !== item.name) nameEl.textContent = item.name;
         el.querySelector(".explodex-group-count").textContent = String(item.count);
@@ -218,6 +227,10 @@
         return el;
       }
 
+      function promptNewGroup(anchor) {
+        openPrompt(anchor, "New group", "", (name) => commit(core.createGroup(state, name)));
+      }
+
       function groupAddEl() {
         let el = document.querySelector("[data-explodex-group-add]");
         if (!el) {
@@ -227,22 +240,79 @@
           el.setAttribute("tabindex", "0");
           el.className = "explodex-group-add";
           el.textContent = "+ New group";
-          el.addEventListener("click", () => {
-            openPrompt(el, "New group", "", (name) => commit(core.createGroup(state, name)));
-          });
+          el.addEventListener("click", () => promptNewGroup(el));
         }
         return el;
       }
 
+      // Preferred placement for the "New group" affordance: a compact ＋ at the
+      // right end of the Projects section header row (the "Projects/项目"
+      // toggle — locale-proof because it is located structurally, not by text).
+      // The trailing "+ New group" row stays as fallback when no header found.
+      function projectsSectionHeader() {
+        const nav = sidebarNavRoot();
+        const first = nav?.querySelector("[data-app-action-sidebar-project-id]");
+        if (!nav || !first) return null;
+        let best = null;
+        for (const b of nav.querySelectorAll("button[class*='group/section-toggle']")) {
+          if (b === first || b.contains(first)) continue;
+          if (first.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING) best = b;
+          else break;
+        }
+        return best;
+      }
+
+      function ensureAddOnHeader() {
+        const header = projectsSectionHeader();
+        if (!header) return false;
+        if (header.querySelector("[data-explodex-group-add-inline]")) return true;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.setAttribute("data-explodex-group-add-inline", "true");
+        btn.className = "explodex-group-add-inline";
+        btn.title = "New group";
+        btn.setAttribute("aria-label", "New group");
+        btn.textContent = "＋";
+        const stop = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        };
+        // pointerdown, not click: the header is a React button whose
+        // capture-phase handlers can swallow the click (same lesson as the
+        // move button and folder-copy-path).
+        btn.addEventListener("pointerdown", (event) => {
+          stop(event);
+          if (event.button === 0) promptNewGroup(btn);
+        });
+        btn.addEventListener("click", stop);
+        if (header instanceof HTMLElement && global.getComputedStyle(header).position === "static")
+          header.style.position = "relative";
+        header.appendChild(btn);
+        return true;
+      }
+
+      // 2x2 grid icon as inline SVG: the ▦ glyph (U+25A6) is absent from
+      // common zh-CN Windows fonts and tofu-renders into a stray letter.
+      const MOVE_ICON_SVG =
+        '<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">' +
+        '<rect x="0.5" y="0.5" width="4.6" height="4.6" rx="1.2"/>' +
+        '<rect x="6.9" y="0.5" width="4.6" height="4.6" rx="1.2"/>' +
+        '<rect x="0.5" y="6.9" width="4.6" height="4.6" rx="1.2"/>' +
+        '<rect x="6.9" y="6.9" width="4.6" height="4.6" rx="1.2"/></svg>';
+
       function ensureMoveButton(header, projectId) {
         let btn = header.querySelector("[data-explodex-group-move]");
-        if (btn) return btn;
+        if (btn) {
+          if (btn.textContent) btn.innerHTML = MOVE_ICON_SVG; // migrate ▦ glyph builds
+          return btn;
+        }
         btn = document.createElement("button");
         btn.type = "button";
         btn.setAttribute("data-explodex-group-move", "true");
         btn.className = "explodex-group-movebtn";
         btn.title = "Move to group (or right-click the project row)";
-        btn.textContent = "▦";
+        btn.innerHTML = MOVE_ICON_SVG;
         // Open on pointerdown, not click: the project row is a React button whose
         // capture-phase pointerdown can re-render the row, so the click event
         // never lands on this button and click-only handlers silently die.
@@ -328,8 +398,10 @@
           setBlockHidden(entry.block, !!(gid && collapsed.has(gid)));
           if (container && entry.block.parentElement === container) desired.push(entry.block);
         }
+        const headerAdd = ensureAddOnHeader();
         if (container) {
-          desired.push(groupAddEl());
+          if (headerAdd) document.querySelector("[data-explodex-group-add]")?.remove();
+          else desired.push(groupAddEl());
           applyOrder(container, desired);
         }
         removeStaleGroupHeaders();
@@ -420,7 +492,8 @@
         panel.style.cssText =
           "position:fixed;z-index:2147483647;min-width:180px;padding:4px;border-radius:10px;" +
           "border:1px solid color-mix(in srgb, currentColor 14%, transparent);" +
-          "background:var(--color-bg-primary,#111);color:inherit;" +
+          "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
+          "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
           "font:13px/1.4 system-ui,-apple-system,sans-serif";
 
@@ -436,7 +509,7 @@
       function menuItem({ label, active, onClick }) {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = active ? `${label} ✓` : label;
+        btn.textContent = active ? `${label} √` : label;
         btn.style.cssText =
           "display:block;width:100%;text-align:left;padding:8px 12px;border:0;background:transparent;" +
           "color:inherit;font:13px system-ui,-apple-system,sans-serif;cursor:pointer;border-radius:6px";
@@ -614,7 +687,7 @@
           entry.block.classList.remove("explodex-in-group");
         }
         for (const el of document.querySelectorAll(
-          "[data-explodex-group-header],[data-explodex-group-add],[data-explodex-group-move]",
+          "[data-explodex-group-header],[data-explodex-group-add],[data-explodex-group-add-inline],[data-explodex-group-move]",
         )) {
           el.remove();
         }

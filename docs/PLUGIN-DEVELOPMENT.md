@@ -35,18 +35,19 @@ Goal: collapsible custom groups wrapping sidebar projects, state surviving resta
 
 ## Worked example 2: folder-copy-path
 
-Goal: folders in the right-hand Files panel get the same "copy path" affordance files have.
+Goal: folders in the right-hand Files panel get the same "copy path" affordance files have. **Files are intentionally left alone** — Codex's native context menu already copies file paths, and an early build of this plugin intercepted file rows too and *replaced* that native menu (a visible regression). See the file-gate note in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 **logic.js** — path algebra + shape guessing: `joinPath(root, rel)` (Windows vs POSIX separator detection, absolute/UNC passthrough), `entryFromProps(props)` (scan known prop shapes for `path/absolutePath/fullPath` and folder-ness), `looksLikeFolder({ariaExpanded, hasChevron, name})`. 12 unit tests.
 
-**index.js** — for each tree row inside `[data-app-shell-focus-area="right-panel"]`: walk the React fiber (`__reactFiber*` key, max 32 hops) collecting a path-bearing entry prop and a `cwd`/`workspaceRoot` from ancestry; resolve to an absolute path; append a hover-revealed ⧉ button that writes the clipboard (`navigator.clipboard`, `execCommand` fallback) and flashes ✓/✕. The decorator is idempotent (rows already marked are skipped) and teardown removes all buttons.
+**index.js** — for each tree row inside `[data-app-shell-focus-area="right-panel"]`: walk the React fiber (`__reactFiber*` key, max 32 hops) collecting a path-bearing entry prop and a `cwd`/`workspaceRoot` from ancestry; resolve to an absolute path; append a hover-revealed copy icon (inline SVG — not the `⧉` glyph) that writes the clipboard (`navigator.clipboard`, `execCommand` fallback) and flashes ✓/✕. The decorator is idempotent (rows already marked are skipped) and teardown removes all buttons.
 
-Design note: rows whose *only* signal is a label are deliberately left alone — guessing a path from a name would copy wrong data. Prefer no button over a wrong button.
+Design note: rows whose *only* signal is a label are deliberately left alone — guessing a path from a name would copy wrong data. Prefer no button over a wrong button. Two guardrails were added the hard way, after user-visible regressions: (1) `folderAbsolute()` rejects file rows *before* any heuristic (`data-item-type` of `file|link|symlink`, or an extension-bearing leaf name → `null`, overriding even a fiber `isFolder: true`), so the native file menu survives; (2) never hardcode panel colors against `--color-bg-primary` — Codex has no such property; use `var(--color-token-dropdown-background, var(--color-bg-primary, #111))` so injected menus/dialogs follow the active Codex theme.
 
 ## Rules of the road
 
 - **Idempotent reconcile, debounced observer, full teardown.** The sidebar/tree re-render constantly; each pass must be cheap and produce identical DOM regardless of how many times it ran. Disabling the plugin must leave zero residue.
 - **Never wrap or mutate React-owned subtrees.** Reorder siblings, hide with `display`, append *new* leaf nodes — that's the whole toolkit. Re-parenting Codex's own nodes into your containers fights React's reconciler.
+- **Never render UI as a text glyph.** `◍ ● ▸ ▾ ▦ ⧉ ✓ ✕` and friends are missing from the zh-CN Windows font stack and tofu-render into shapes that read as stray letters. Draw dots/arrows with CSS shapes and icons as inline SVG; keep surviving characters GB2312-safe (`＋ … √ × ▲ ▼`). (Note: this was a real hazard but *not* the root cause of the "F/U before sidebar rows" reports — those letters were the SDK footer strip clipped inside a Codex project overlay; see [COMPATIBILITY.md](COMPATIBILITY.md) SDK section. When a visual bug survives your fix, check the live DOM with a text-node `TreeWalker` before blaming rendering.)
 - **Target `data-testid` / aria / accessible text**, with fallback chains, never generated class names. Record every selector you depend on in `docs/COMPATIBILITY.md`.
 - **Fail soft.** Wrap reconcile bodies in try/catch + `console.warn("[my-plugin] …")`; a broken plugin must degrade to "feature missing", not "sidebar broken".
 - **Typecheck:** add your plugin to `tsconfig.plugins.json` files (with a small `types.d.ts` for any global you attach) and keep `bun run --bun tsc -p tsconfig.plugins.json` green.

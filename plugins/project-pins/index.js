@@ -956,7 +956,7 @@
       function menuItem({ label, active, onClick }) {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = active ? `${label} ✓` : label;
+        btn.textContent = active ? `${label} √` : label;
         btn.style.cssText =
           "display:block;width:100%;text-align:left;padding:8px 12px;border:0;background:transparent;" +
           "color:inherit;font:13px system-ui,-apple-system,sans-serif;cursor:pointer;border-radius:6px";
@@ -995,7 +995,8 @@
         panel.style.cssText =
           "position:fixed;z-index:2147483647;min-width:148px;padding:4px;border-radius:10px;" +
           "border:1px solid color-mix(in srgb, currentColor 14%, transparent);" +
-          "background:var(--color-bg-primary,#111);color:inherit;" +
+          "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
+          "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
           "font:13px/1.4 system-ui,-apple-system,sans-serif";
 

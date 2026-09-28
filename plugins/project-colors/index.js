@@ -336,19 +336,30 @@ nav [data-explodex-color-picker] {
   border-radius: 4px;
   background: color-mix(in srgb, currentColor 10%, transparent);
   color: var(--color-text-tertiary, color-mix(in srgb, currentColor 55%, transparent));
-  font: 11px/16px system-ui, -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
   z-index: 3;
 }
+/* The dot is drawn with CSS, not a text glyph: ◍/● fall back to tofu
+   boxes on some zh-CN Windows font stacks and read as stray letters. */
+nav [data-explodex-color-picker]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
 nav [data-explodex-color-picker]:hover {
   background: color-mix(in srgb, currentColor 16%, transparent);
   color: inherit;
 }
 nav [data-explodex-picker-host]:hover [data-explodex-color-picker],
-nav [data-explodex-picker-host]:focus-within [data-explodex-color-picker] {
+nav [data-explodex-color-picker]:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
@@ -487,7 +498,13 @@ nav [data-explodex-colored][data-explodex-group-pos="only"]::before {
        */
       function ensurePickerButton(host, target) {
         if (!host?.isConnected) return;
-        if (host.querySelector("[data-explodex-color-picker]")) return;
+        const existing = host.querySelector("[data-explodex-color-picker]");
+        if (existing) {
+          // Migrate old hot-injected rows: earlier builds drew the picker
+          // as a "◍"/"●" text glyph, which tofu-renders on some font stacks.
+          if (existing.textContent) existing.textContent = "";
+          return;
+        }
 
         host.setAttribute("data-explodex-picker-host", "true");
         const btn = document.createElement("button");
@@ -497,7 +514,10 @@ nav [data-explodex-colored][data-explodex-group-pos="only"]::before {
         btn.setAttribute("data-explodex-picker-id", target.id);
         btn.setAttribute("aria-label", target.label);
         btn.title = target.label;
-        btn.textContent = "◍";
+        // No textContent: the visible dot comes from the CSS ::before.
+        // (U+25CD "◍" became tofu on zh-CN Windows and U+25CF "●" is still
+        // font-dependent — never rely on geometric glyphs here.)
+        btn.textContent = "";
         btn.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -689,7 +709,8 @@ nav [data-explodex-colored][data-explodex-group-pos="only"]::before {
         panel.style.cssText =
           "position:fixed;z-index:2147483647;min-width:180px;padding:10px;border-radius:10px;" +
           "border:1px solid color-mix(in srgb, currentColor 14%, transparent);" +
-          "background:var(--color-bg-primary,#111);color:inherit;" +
+          "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
+          "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
           "font:12px/1.4 system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;gap:8px";
 
@@ -732,7 +753,7 @@ nav [data-explodex-colored][data-explodex-group-pos="only"]::before {
 
         if (target.kind === "project" && settings.autoAssignProjects) {
           const autoBtn = c.button({
-            label: manual ? "Use auto" : "Use auto ✓",
+            label: manual ? "Use auto" : "Use auto √",
             color: "ghost",
             size: "composerSm",
             onClick: () => {
