@@ -200,6 +200,14 @@
         backdrop.addEventListener("pointerdown", (event) => {
           if (event.target === backdrop) closeMenu();
         });
+        // While our menu is up, right-clicks (on the panel text or anywhere in
+        // the backdrop) must not raise Electron's native "Select All" menu —
+        // that was the "two menus at once" report.
+        const killNative = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        };
+        backdrop.addEventListener("contextmenu", killNative);
         const panel = document.createElement("div");
         panel.setAttribute("role", "menu");
         panel.setAttribute("aria-label", "Folder actions");
@@ -209,7 +217,9 @@
           "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
           "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
-          "font:13px/1.4 system-ui,-apple-system,sans-serif";
+          "font:13px/1.4 system-ui,-apple-system,sans-serif;" +
+          "-webkit-user-select:none;user-select:none";
+        panel.addEventListener("contextmenu", killNative);
         for (const item of items) {
           const btn = document.createElement("button");
           btn.type = "button";
@@ -323,6 +333,40 @@
           if (dbg.length > 40) dbg.shift();
         }
         return absolute || null;
+      }
+
+      // Path resolution is the expensive part of every scan and every
+      // right-click (fiber walk up to 32 hops + hooks + cwd climb). Cache it
+      // per node, keyed by the row's current identity: virtualized lists
+      // REUSE DOM nodes for different items, so a key change forces recompute
+      // and a stale absolute path can never survive a row re-bind. (Switching
+      // projects remounts the rows, so cwd staleness can't pin the cache.)
+      const pathCache = new WeakMap();
+
+      function rowKeyOf(node) {
+        const itemPath = node.getAttribute?.("data-item-path");
+        if (itemPath != null) return `p:${node.getAttribute("data-item-type") ?? ""}|${itemPath}`;
+        const attr =
+          node.getAttribute?.("data-file-path") ||
+          node.getAttribute?.("data-path") ||
+          node.getAttribute?.("data-folder-path");
+        if (attr) return `p:|${attr}`;
+        return `t:${(node.textContent ?? "").trim().slice(0, 80)}:${node.getAttribute?.("aria-expanded") ?? ""}`;
+      }
+
+      function folderAbsoluteCached(node) {
+        if (!node || node.nodeType !== 1 || typeof node.getAttribute !== "function") return null;
+        let key = "";
+        try {
+          key = rowKeyOf(node);
+        } catch {
+          return folderAbsolute(node);
+        }
+        const hit = pathCache.get(node);
+        if (hit && hit.key === key) return hit.absolute;
+        const absolute = folderAbsolute(node);
+        pathCache.set(node, { key, absolute });
+        return absolute;
       }
 
       function fiberKeys(node) {
@@ -441,7 +485,7 @@
           if (absolute) break;
           if (!rightClickedRow && (node.textContent || "").trim()) rightClickedRow = node;
           seen += 1;
-          absolute = folderAbsolute(node);
+          absolute = folderAbsoluteCached(node);
           if (absolute) continue;
           const keys = fiberKeys(node);
           if (keys) miss.push(`${node.tagName}:${keys.join(",")}`);
@@ -484,13 +528,33 @@
         ]);
       }
 
-      function decorateRow(row, claimed) {
+      function decorateRow(row, claimed, { requireRowSize = false } = {}) {
         const existing = [...row.querySelectorAll(`[${BTN_ATTR}]`)];
-        if (row.parentElement?.closest(`[${ROW_MARK}]`) || !isRowSized(row)) {
+        if (row.parentElement?.closest(`[${ROW_MARK}]`)) {
           for (const b of existing) b.remove();
           return;
         }
-        const absolute = folderAbsolute(row);
+        if (row.getAttribute(ROW_MARK) === "true") {
+          // Re-scan of an already-decorated row: resolve from the cache and
+          // touch nothing unless the path changed. No getBoundingClientRect —
+          // the old version forced layout for every row on every scan, which
+          // is what made the first right-click after a refocus crawl.
+          const absolute = folderAbsoluteCached(row);
+          if (!absolute) {
+            row.removeAttribute(ROW_MARK);
+            for (const b of existing) b.remove();
+            return;
+          }
+          claimed.add(absolute);
+          const btn = existing[0];
+          if (btn && (btn.dataset.explodexPath !== absolute || btn.title !== absolute)) {
+            btn.dataset.explodexPath = absolute;
+            btn.title = absolute;
+          }
+          return;
+        }
+        if (requireRowSize && !isRowSized(row)) return;
+        const absolute = folderAbsoluteCached(row);
         if (!absolute) return;
         if (claimed.has(absolute)) {
           // Nested duplicate candidate for an already-decorated row.
@@ -520,8 +584,17 @@
             // Selector miss on this Codex build: fall back to a React-fiber
             // sweep; the row-size guard keeps containers out.
             rows = [...root.querySelectorAll("div")].filter((el) => reactFiber(el));
+            for (const row of rows) decorateRow(row, claimed, { requireRowSize: true });
+            continue;
           }
-          for (const row of rows) decorateRow(row, claimed);
+          for (const row of rows) {
+            // Current-shape rows (data-item-path) are real virtualized list
+            // buttons — trusting the attribute skips a forced-layout size
+            // probe on every row of every scan. Older/alternative selectors
+            // can also match big containers, so those keep the guard.
+            const trusted = row.hasAttribute?.("data-item-path");
+            decorateRow(row, claimed, { requireRowSize: !trusted });
+          }
         }
       }
 
@@ -532,6 +605,32 @@
           scanTimer = null;
           scan();
         }, SCAN_DEBOUNCE_MS);
+      }
+
+      // Scan scheduling must never ride on document-wide subtree mutations:
+      // chat streaming floods them, and a body-subtree observer turned every
+      // streamed token into a scan (the "sidebar click is sluggish after
+      // another app" symptom). Watch only what the Files panel actually is:
+      // the right-panel elements themselves (plus a light discovery interval
+      // for when Codex replaces them) and each tree's shadow root.
+      const panelObservers = new Map();
+
+      function observePanels() {
+        const seen = new Set();
+        for (const panel of document.querySelectorAll('[data-app-shell-focus-area="right-panel"]')) {
+          seen.add(panel);
+          if (!panelObservers.has(panel)) {
+            const obs = new MutationObserver(scheduleScan);
+            obs.observe(panel, { childList: true, subtree: true });
+            panelObservers.set(panel, obs);
+          }
+        }
+        for (const [panel, obs] of panelObservers) {
+          if (!seen.has(panel)) {
+            obs.disconnect();
+            panelObservers.delete(panel);
+          }
+        }
       }
 
       const STYLE_TEXT =
@@ -556,7 +655,15 @@
       for (const stale of document.querySelectorAll(`[${BTN_ATTR}]`)) stale.remove();
       for (const staleRow of document.querySelectorAll(`[${ROW_MARK}]`)) staleRow.removeAttribute(ROW_MARK);
       bodyObserver = new MutationObserver(scheduleScan);
-      bodyObserver.observe(document.body, { childList: true, subtree: true });
+      bodyObserver.observe(document.body, { childList: true });
+      observePanels();
+      // Discovery fallback: right-panel remounts and new file-tree hosts are
+      // picked up within 1.5 s even when our scoped observers miss them.
+      const discoveryTimer = global.setInterval(() => {
+        if (disposed) return;
+        observePanels();
+        scan();
+      }, 1500);
       document.addEventListener("contextmenu", onContextMenu, true);
       scan();
 
@@ -565,7 +672,10 @@
       return () => {
         disposed = true;
         if (scanTimer != null) global.clearTimeout(scanTimer);
+        global.clearInterval(discoveryTimer);
         bodyObserver?.disconnect();
+        for (const obs of panelObservers.values()) obs.disconnect();
+        panelObservers.clear();
         for (const obs of shadowObservers.values()) obs.disconnect();
         shadowObservers.clear();
         document.removeEventListener("contextmenu", onContextMenu, true);

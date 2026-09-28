@@ -988,6 +988,12 @@
         backdrop.addEventListener("pointerdown", (event) => {
           if (event.target === backdrop) closeMenu();
         });
+        // No native "Select All" menu stacking on top of ours (user-report).
+        const killNative = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        };
+        backdrop.addEventListener("contextmenu", killNative);
 
         const panel = document.createElement("div");
         panel.setAttribute("role", "menu");
@@ -998,7 +1004,9 @@
           "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
           "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
-          "font:13px/1.4 system-ui,-apple-system,sans-serif";
+          "font:13px/1.4 system-ui,-apple-system,sans-serif;" +
+          "-webkit-user-select:none;user-select:none";
+        panel.addEventListener("contextmenu", killNative);
 
         panel.appendChild(
           menuItem({

@@ -907,6 +907,9 @@
         resetThreadCatalog();
       }
 
+      let disposed = false;
+      let scanTimer = null;
+
       function scanForCommandMenu() {
         const root = commandMenuDialog();
         if (root) {
@@ -916,7 +919,23 @@
         if (activeDialog) onDialogClosed();
       }
 
-      bodyObserver = new MutationObserver(scanForCommandMenu);
+      // The dialog opens with an animation and stays mounted for a while, so
+      // a debounced look-up is enough. Running scanForCommandMenu() directly
+      // from a documentElement-wide subtree observer meant every streamed
+      // token re-ran 4 document queries, which is exactly the load that made
+      // the sidebar crawl after alt-tabbing back (2026-09-28 report).
+      const SCAN_DEBOUNCE_MS = 180;
+      function scheduleScan() {
+        if (disposed) return;
+        if (scanTimer != null) global.clearTimeout(scanTimer);
+        scanTimer = global.setTimeout(() => {
+          scanTimer = null;
+          if (disposed) return;
+          scanForCommandMenu();
+        }, SCAN_DEBOUNCE_MS);
+      }
+
+      bodyObserver = new MutationObserver(scheduleScan);
       bodyObserver.observe(document.documentElement, { childList: true, subtree: true });
       loadSettings();
       scanForCommandMenu();
@@ -925,6 +944,8 @@
 
       return () => {
         log.info("teardown");
+        disposed = true;
+        if (scanTimer != null) global.clearTimeout(scanTimer);
         onDialogClosed();
         bodyObserver?.disconnect();
         bodyObserver = null;

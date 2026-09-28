@@ -86,10 +86,64 @@ project header, which exists in every locale.
 
 Event model: the move button (inline SVG grid icon — not the `▦` glyph)
 opens the menu on `pointerdown` (capture-phase React row
-handlers kill `click`), and right-click opens the same menu via a single
-document-level capture listener (per-row listeners survive hot re-injection
-and serve stale menus). Menu items: Ungrouped + groups only — group creation
+handlers kill `click`), and stretches to the **full row height**
+(`align-self:stretch` inside the flex row, icon centered via inline-flex) so
+the whole right edge is a comfortable hit target. Project rows have **no
+right-click handler**: the move menu is icon-only now, which leaves Codex's
+native project context menu untouched on rows. Instead one window-level
+capture `contextmenu` listener suppresses Electron's native menu on
+Explodex-owned chrome only (`[data-explodex-group-header]`, the add-inline /
+move / color-picker / copy-path buttons, the footer strip `.ex-nav-btn`) —
+right-clicking a group header used to pop "Select All" even with
+`user-select:none`, because the native menu needs `preventDefault()`, not
+CSS. Menu items: Ungrouped + groups only — group creation
 lives on the "+ New group" row.
+
+**Hover-card guard (project rows):** Codex's project hover card (name /
+tasks / path / "编辑项目") is opened by React synthetic pointer handlers —
+React 18 delegates everything on the `#root` container, so hovering *any*
+part of the row raises it. The row's right edge is an action strip, not
+project info, so each row gets bubble-phase `pointermove`/`pointerover`
+listeners (bound once, marked via `data-explodex-hover-guard` to survive hot
+re-injection) that `stopPropagation()` for right-side targets: any button in
+the row, any non-`flex-1` child `<div>` (the action cluster), or the row's
+own padding within 24 px of its right edge. The `flex-1` content area keeps
+the card — that is the responsive "project info" zone. A listener dump
+confirms aside/nav/section/rows carry **no** Codex-native pointer listeners
+(only our own SDK/plugin ones appear elsewhere), so bubble-blocking at the
+row is the right layer to act on.
+
+Blocking alone is **not** enough: sweeping label → button already armed
+Codex's open-timer during the left-zone moves, and the card still pops
+~500 ms later while the pointer rests on the buttons — exactly what the
+"still shows on the whole row" report was. So on each *transition* into the
+right zone the guard also dispatches a single bubbling `pointerout` from the
+row with `relatedTarget = document.body`; React's EnterLeave plugin turns it
+into synthetic `pointerleave`s up the ancestor chain and **Codex's own close
+handler** runs. Live-verified at the delegation point (2026-09-28): the
+synthetic `pointerout/rel=body` arrives at `#root` exactly once per
+transition, blocked right-zone moves never reach `#root`, and left-zone
+hover still delivers its `pointerover`.
+
+**CSS backstop (third layer, race-free).** The event layer above cannot be
+tested end-to-end from CDP: `Input.dispatchMouseEvent` hover never opens the
+card (Radix's delay timer needs a real, unthrottled hover), so "it works at
+`#root`" is the strongest claim synthetic probing can make — and a real mouse
+still leaked. The card is therefore also suppressed *without* touching events:
+the trigger is a Radix tooltip (`SPAN.contents` above the header, carrying
+`data-state` + `aria-describedby`) and its content is `[role="tooltip"]`, so
+the guard sets `html.explodex-hovercard-off` while the pointer is in a row's
+action strip and CSS drops the card outright. A window-level `pointerover`
+releases the flag as soon as the pointer is anywhere outside a guarded row
+(right-zone events are `stopPropagation()`ed by the row guard and never reach
+it, so the flag survives while the user hovers the strip). Collateral is
+limited to other tooltips while the pointer sits on that strip.
+
+Row geometry worth remembering when touching this: the action cluster is
+`opacity-0` until hover and only **8 px wide**, while its 20 px buttons
+overflow it and sit *underneath* our full-height move button — all of them are
+still inside `[data-app-action-sidebar-project-id]`, so containment (not
+geometry) is what the guard must classify on.
 
 **Glyph rule (secondary hardening, not the F/U root cause):** an early round
 of the "stray F/U" reports was blamed on tofu glyphs. The cleanup below did
@@ -178,6 +232,70 @@ session is active; with an idle project the pane stays empty and there is
 nothing to decorate. If a future Codex build regresses this, the
 `__explodexFcpShadowDump` / `__explodexFcpPathDump` buffers above capture the
 new structure without another debug round-trip.
+
+## Responsiveness contract (click feel)
+
+The "collapse takes ages", "first right-click after alt-tabbing back is very
+slow" and "Select All + Copy path at once" reports all trace to the
+mechanisms below — **not** event bubbling (the handlers are synchronous
+capture listeners that `preventDefault` before returning):
+
+- **User commits never wait on the debounce.** project-groups `commit()` now
+  calls `reconcileNow()` — once state is hydrated it runs `doReconcile()`
+  **synchronously inside the click handler**; the collapse/expand is applied
+  before the event returns (live-verified 2026-09-28). Codex's own DOM
+  mutations keep the 250 ms debounced path.
+  The fast path must **not** be gated on `reconcileInFlight`: that flag only
+  guards the *async* `reconcile()` (it awaits `hydrate()`, so two passes could
+  interleave), while `doReconcile()` is synchronous and cannot re-enter
+  itself. With the gate in place, every click landing during a sidebar
+  mutation burst became a chain of 16 ms retries behind an observer that keeps
+  re-arming — the "first click after opening a chat thread does nothing, the
+  next ones are fine" report (2026-09-28, round 4).
+- **Self-reporting latency.** `window.__explodexPgDebug` keeps the last 40
+  reconcile passes as `{kind: "commit-sync" | "reconcile-async", ms, hydrated,
+  inflight, rows}`. A sluggish click is explained by which `kind` it took and
+  how large `ms` is, without another debug round-trip.
+- **One shared zone observer (SDK).** `inject.observeZone` used to create a
+  MutationObserver on `documentElement`'s entire subtree *per watcher* — with
+  6+ live watchers every chat-streaming mutation batch was delivered N times,
+  and `includeMutations` watchers re-ran their callback on every animation
+  frame. That is the "click a group after alt-tabbing back mid-stream feels
+  dead" cause. The SDK now keeps a single shared observer and dispatches
+  records to watchers; `includeMutations` watchers only schedule when a
+  record's target actually lies inside their zone anchor's subtree.
+- **folder-copy-path scan scheduling is scoped.** The plugin no longer
+  observes `document.body` with `subtree:true` (chat streaming flooded it).
+  It watches: `body` childList only, a per-`[data-app-shell-focus-area=right-panel]`
+  subtree observer (pruned when the panel unmounts), each
+  `<file-tree-container>` shadow root, plus a 1500 ms discovery interval that
+  re-attaches panel observers and scans.
+- **Remaining document-wide observers are debounced.** Two inherited plugins
+  still ran a full-document query per mutation batch from a
+  `documentElement`+`subtree` observer: command-menu-threads (4 `querySelector`s
+  for the dialog) and effort-shortcuts (composer lookup + hint remeasure).
+  Both now debounce (180 ms / 200 ms) and effort-shortcuts only re-measures
+  when its hint popover is actually open. (usage-reset-glance's is a cheap
+  `isNavMounted` guard + no-op popover reposition, left as is.)
+- **Repeated scans must not re-resolve cold.** folder-copy-path caches path
+  resolution in a `WeakMap` keyed by node + current `data-item-path`
+  (virtualized lists reuse DOM nodes, so a key change forces recompute), and
+  the re-scan fast path for already-decorated rows does zero
+  `getBoundingClientRect`. The old code fiber-walked + forced layout for every
+  row on every scan — right after a window refocus (Codex re-renders heavily)
+  that saturated the main thread exactly when the user right-clicked.
+- **Injected menus are non-selectable and swallow right-clicks.** Every
+  Explodex panel/backdrop sets `-webkit-user-select:none;user-select:none`
+  (prompt `input`s opt back in) and `preventDefault`s `contextmenu` on both
+  panel and backdrop. Selectable panel text let Electron raise its native
+  "Select All" menu on top of the still-open Explodex menu — that was the
+  double-menu report. SDK `.ex-nav-btn` / `.ex-popover` / `.ex-dialog` carry
+  the same rule.
+
+Measuring feel on a minimized renderer: `requestAnimationFrame` and
+`setTimeout` are throttled hard (a 10 ms poll fired at ~500 ms), and the file
+tree renders **zero rows** while hidden/idle — verify synchronous application
+by draining microtasks (`await Promise.resolve()`) instead of timers.
 
 ## Upstream plugins (inherited selectors)
 

@@ -702,6 +702,12 @@ nav [data-explodex-colored][data-explodex-group-pos="only"]::before {
         backdrop.addEventListener("pointerdown", (event) => {
           if (event.target === backdrop) closePicker();
         });
+        // No native "Select All" menu stacking on top of the picker (user-report).
+        const killNative = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        };
+        backdrop.addEventListener("contextmenu", killNative);
 
         const panel = document.createElement("div");
         panel.setAttribute("role", "dialog");
@@ -712,7 +718,9 @@ nav [data-explodex-colored][data-explodex-group-pos="only"]::before {
           "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
           "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
-          "font:12px/1.4 system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;gap:8px";
+          "font:12px/1.4 system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;gap:8px;" +
+          "-webkit-user-select:none;user-select:none";
+        panel.addEventListener("contextmenu", killNative);
 
         const title = document.createElement("div");
         title.textContent = target.label;

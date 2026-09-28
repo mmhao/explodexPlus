@@ -83,9 +83,47 @@ SYSTEM 服务 `codex-windows-sandbox-service` 和 `codex` CLI 都会命中旧的
 因此根节点改由某个项目标题行推导而来，该项目标题行在所有语言环境下都存在。
 
 事件模型：移动按钮（内联 SVG 网格图标，而非 `▦` 字形）在 `pointerdown` 时打开移动菜单（捕获阶段的 React 行处理器会
-吞掉 `click`），右键通过一个 document 级捕获监听器打开同一菜单（逐行注册的
-监听器会在热重注入后存活并弹出过期菜单）。菜单项：仅有“未分组”+ 各分组——
-分组的创建放在 “+ New group”（新建分组）行上。
+吞掉 `click`），并且撑满**整行高度**（在 flex 行内 `align-self:stretch`，图标用
+inline-flex 居中），这样整条右边缘都是舒适的点击区。项目行**不再注册右击监听器**：
+移动菜单现在只由图标触发，从而把 Codex 原生的项目上下文菜单完整留给行本身。取而代之
+的是一个 window 级捕获 `contextmenu` 监听器，它只在 Explodex 自有控件上抑制原生菜单
+（`[data-explodex-group-header]`、行内新建按钮、移动/颜色选择/复制路径按钮、底部插件条
+`.ex-nav-btn`）——右击分组标题行曾会弹出 “Select All”，即使设了 `user-select:none`
+也没用，因为原生菜单需要的是 `preventDefault()`，不是 CSS。菜单项：仅有“未分组”+
+各分组——分组的创建放在 “+ New group”（新建分组）行上。
+
+**悬停卡守卫（项目行）：** Codex 的项目悬停卡（项目名 / 任务数 / 路径 / “编辑项目”）
+由 React 合成指针事件打开——React 18 把全部监听器委托在 `#root` 容器上，所以鼠标移到
+整行的*任意*位置都会弹出它。监听器 dump 证实 aside/nav/section/行本身**没有**任何
+Codex 原生指针监听器（只有我们 SDK/插件自己的），因此“在行这一层拦冒泡”就是正确的
+介入层。每行注册（只注册一次，用 `data-explodex-hover-guard` 标记以在热重注入后存活）
+冒泡阶段的 `pointermove`/`pointerover` 监听器，对右侧目标调用 `stopPropagation()`：
+行内的任意按钮、任意非 `flex-1` 的子 `<div>`（操作簇），以及距离行右缘 24px 以内的
+行自身 padding 区域。`flex-1` 内容区保留该卡片——它才是响应式的“项目信息”区。
+
+只做拦截是**不够**的：从标签扫向按钮时，左侧区间的移动早已把 Codex 的打开计时器武装
+起来，约 500ms 后卡片照样在指针停于按钮上时弹出——这正是“仍会整行弹出”反馈的成因。
+因此每次*从左侧过渡*进入右侧区时，守卫还会从行上派发一个冒泡的 `pointerout`
+（`relatedTarget = document.body`）；React 的 EnterLeave 插件把它转换成沿祖先链向上
+的合成 `pointerleave`，由 **Codex 自己的关闭处理器**完成关闭。已在委托点实测
+（2026-09-28）：每次过渡恰好只有一个合成 `pointerout/rel=body` 到达 `#root`，被拦截
+的右侧移动永远到不了 `#root`，左侧悬停的 `pointerover` 照常送达。
+
+**CSS 兜底（第三层，与事件时序无关）。** 上面这层事件拦截无法用 CDP 端到端验证：
+`Input.dispatchMouseEvent` 的悬停从来弹不出卡片（Radix 的延迟计时器需要真实、不被
+节流的悬停），所以“在 `#root` 处生效”已是合成探针能给出的最强结论——而真实鼠标仍有
+漏网。于是卡片还被**不碰事件**地压制了一层：触发器是行上方那个 Radix tooltip
+（`SPAN.contents`，带 `data-state` 与 `aria-describedby`），卡片本体是
+`[role="tooltip"]`；守卫在指针位于某行操作条期间给 `html` 加上
+`explodex-hovercard-off` 类，CSS 直接把卡片隐藏。window 级 `pointerover` 会在指针
+离开被守卫的行后立即解除该类（右侧事件已被行上的 `stopPropagation()` 拦掉，到不了
+这里，所以悬停操作条期间标记稳定保持）。代价仅限于：指针停在该操作条期间，其他
+tooltip 也一并隐藏。
+
+一个值得记住的行内几何事实：操作簇默认 `opacity-0`、宽度只有 **8px**，而其中 20px
+宽的按钮溢出这个容器、叠在我们那个整行高度的移动按钮*下面*——但它们全都位于
+`[data-app-action-sidebar-project-id]` 内部，所以守卫必须按**树包含关系**（而不是
+几何位置）来判定归属。
 
 **字形规则（次级加固，并非 F/U 的根因）：** “孤立 F/U 字母”问题的前几轮曾被
 归因于豆腐块字形。下面的字形清理确实做了并保留，但后来的文本节点实测证明，
@@ -162,6 +200,57 @@ Explodex 菜单。注意 Files 树只有在某个项目会话处于活动状态�
 为空，没有可装饰的内容。如果未来的 Codex 构建在此处发生回归，上面的
 `__explodexFcpShadowDump` / `__explodexFcpPathDump` 缓冲区能捕获新结构，
 无需再来一轮调试。
+
+## 响应性契约（点击手感）
+
+“收缩半天才生效”“从别的软件切回来后第一次右击特别慢”“Select All 和
+Copy path 两个菜单同时出现”这几类反馈，根因都是下面列出的几个机制——
+**不是**事件冒泡问题（我们的处理器是同步的捕获监听器，返回前就已
+`preventDefault`）：
+
+- **用户操作不等防抖。** project-groups 的 `commit()` 现在调用
+  `reconcileNow()`——状态已 hydrate 时它**在点击处理器内同步执行**
+  `doReconcile()`，折叠/展开在事件返回前就已生效（2026-09-28 实测）；
+  Codex 自身 DOM 变动仍走 250ms 防抖路径。
+  这条同步快路径**绝不能**再被 `reconcileInFlight` 卡住：那个标志只保护
+  *异步*的 `reconcile()`（它要 `await hydrate()`，两趟可能交错），而
+  `doReconcile()` 是同步的、不可能自我重入。带上这个门之后，落在侧栏 DOM
+  变动高峰期的每次点击都会变成一串 16ms 重试、排在一个不断重新武装的观察者
+  后面——这正是“打开聊天窗口后第一次点分组没反应，之后就正常”的成因
+  （2026-09-28 第 4 轮反馈）。
+- **延迟自证。** `window.__explodexPgDebug` 保留最近 40 次 reconcile 的
+  `{kind: "commit-sync" | "reconcile-async", ms, hydrated, inflight, rows}`。
+  点击变慢时，走的是哪个 `kind`、`ms` 多大就能定位问题，无需再来一轮调试。
+- **zone 观察者只留一个（SDK）。** `inject.observeZone` 过去**每次调用**都在
+  `documentElement` 的整棵子树上建一个 MutationObserver——6 个以上存活观察者时，
+  聊天流式的每一批 DOM 变动都被投递 N 次，`includeMutations` 的 watcher 还会每帧
+  重跑回调。这正是“流式进行中切回软件再点分组会卡死”的根因。现在 SDK 只保留一个
+  共享观察者并把 records 分发给各 watcher；`includeMutations` watcher 只有当某条
+  record 的目标确实落在自己 zone 锚点子树内时才会排程。
+- **folder-copy-path 的扫描排程要限定范围。** 该插件不再用
+  `document.body` + `subtree:true` 观察（聊天流式会把它打满）。改为只观察：`body`
+  的 childList、每个 `[data-app-shell-focus-area=right-panel]` 的 subtree 观察者
+  （面板卸载时清理）、每个 `<file-tree-container>` 的 shadow root，外加一个 1500ms
+  的发现定时器负责重挂面板观察者并扫描。
+- **剩余的全域观察者已加节流。** 两个继承插件此前在 `documentElement`+`subtree`
+  观察者里每批 DOM 变动都跑全文档查询：command-menu-threads（4 次 `querySelector`
+  找对话框）与 effort-shortcuts（解析 composer + 重测提示位置）。现在都改为节流
+  （180ms / 200ms），且 effort-shortcuts 只在提示浮层确实打开时才重测。（
+  usage-reset-glance 的回调只是廉价的 `isNavMounted` 判断 + 空操作重定位，保留。）
+- **重复扫描不得冷解析。** folder-copy-path 用 `WeakMap`（键＝节点 + 当前
+  `data-item-path`，虚拟列表会复用 DOM 节点，键变化即强制重算）缓存路径解析，
+  已装饰行的重扫快速路径**零次** `getBoundingClientRect`。旧代码每次扫描都对
+  每一行做 fiber 遍历 + 强制布局——恰在窗口重新聚焦时（Codex 大量重渲染）把
+  主线程打满，用户右击就撞在这个忙窗口上。
+- **注入的菜单不可选中文字并吞掉右击。** 所有 Explodex 面板/遮罩层都设置
+  `-webkit-user-select:none;user-select:none`（弹窗里的 `input` 显式恢复可选），
+  并在面板与遮罩层上对 `contextmenu` 执行 `preventDefault`。此前面板文字可选中，
+  Electron 的原生“全选”菜单会盖在我们还开着的菜单上——就是那次双菜单反馈。
+  SDK 的 `.ex-nav-btn` / `.ex-popover` / `.ex-dialog` 同样适用该规则。
+
+在最小化的渲染进程里测手感并不可靠：`requestAnimationFrame` 与 `setTimeout`
+会被严重节流（10ms 轮询实际 ~500ms 才触发），且窗口隐藏/项目空闲时 Files 树
+渲染 **0** 行——验证同步生效应改用微任务排空（`await Promise.resolve()`）。
 
 ## 上游插件（继承的选择器）
 

@@ -42,6 +42,26 @@
       let activeMenu = null;
       let state = core.normalizeState(null);
 
+      // --- self-reporting triage ------------------------------------------------
+      // Same pattern as folder-copy-path's __explodexFcp* dumps: a "first click
+      // is slow" report needs to say *which* stage was slow, and the sync/async
+      // branch taken is the discriminator. Read window.__explodexPgDebug.
+      const timings = [];
+      function nowMs() {
+        return typeof global.performance?.now === "function" ? global.performance.now() : Date.now();
+      }
+      function recordTiming(kind, startedAt) {
+        timings.push({
+          kind,
+          ms: Math.round(nowMs() - startedAt),
+          hydrated,
+          inflight: reconcileInFlight,
+          rows: document.querySelectorAll("[data-app-action-sidebar-project-id]").length,
+        });
+        if (timings.length > 40) timings.shift();
+        global.__explodexPgDebug = timings;
+      }
+
       // --- persistence (global state via bridge, persisted fallback) -------
 
       function hasEntries(value) {
@@ -96,7 +116,10 @@
       function commit(next) {
         state = next;
         void save();
-        scheduleReconcile();
+        // User-initiated changes apply synchronously: the visual collapse must
+        // not wait behind the 250 ms observer debounce (that felt like a dead
+        // first click). Mutations from Codex keep the debounced path.
+        reconcileNow();
       }
 
       // --- DOM discovery ----------------------------------------------------
@@ -159,11 +182,22 @@
         ".explodex-group-add-inline{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:inherit;opacity:0;cursor:pointer;font-size:13px;line-height:1;padding:2px 6px;border-radius:6px}" +
         "button[class*='group/section-toggle']:hover .explodex-group-add-inline,button[class*='group/section-toggle']:focus-visible .explodex-group-add-inline{opacity:.7}" +
         ".explodex-group-add-inline:hover{opacity:1!important;background:color-mix(in srgb,currentColor 10%,transparent)}" +
-        ".explodex-group-movebtn{flex:none;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.55;padding:0 5px;font-size:13px;line-height:1;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}" +
+        // align-self:stretch: the row is a flex container with align-center,
+        // so a plain button sits at its content height (~11px) and the user
+        // must aim. Stretch + internal centering gives a full-row-height hit
+        // area while the icon stays visually centered.
+        ".explodex-group-movebtn{flex:none;align-self:stretch;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.55;padding:0 6px;font-size:13px;line-height:1;border-radius:4px;display:inline-flex;align-items:center;justify-content:center}" +
         "[data-app-action-sidebar-project-id]:hover .explodex-group-movebtn{opacity:.85}" +
         ".explodex-group-movebtn:hover{opacity:1!important;background:color-mix(in srgb,currentColor 14%,transparent)}" +
         // Nesting cue for projects inside a group: indented with a guide rail.
-        ".explodex-in-group{padding-left:18px;border-left:1px solid color-mix(in srgb,currentColor 16%,transparent);margin-left:7px}";
+        ".explodex-in-group{padding-left:18px;border-left:1px solid color-mix(in srgb,currentColor 16%,transparent);margin-left:7px}" +
+        // Deterministic backstop for the hover card. Codex's project card is a
+        // Radix tooltip (trigger = the display:contents span above the row,
+        // carrying data-state / aria-describedby). Blocking its pointer events
+        // can still lose the race against Codex's own open timer, so while the
+        // pointer sits in a row's right-hand action strip the card is hidden
+        // outright — CSS does not care about event ordering.
+        '.explodex-hovercard-off [role="tooltip"]{display:none!important}';
 
       function ensureStyles() {
         let style = document.getElementById("explodex-project-groups-styles");
@@ -311,7 +345,7 @@
         btn.type = "button";
         btn.setAttribute("data-explodex-group-move", "true");
         btn.className = "explodex-group-movebtn";
-        btn.title = "Move to group (or right-click the project row)";
+        btn.title = "Move to group";
         btn.innerHTML = MOVE_ICON_SVG;
         // Open on pointerdown, not click: the project row is a React button whose
         // capture-phase pointerdown can re-render the row, so the click event
@@ -328,6 +362,79 @@
         });
         header.appendChild(btn);
         return btn;
+      }
+
+      // --- hover-card guard -----------------------------------------------------
+      // Codex's project hover card (name / task count / path / Edit project) is
+      // a React synthetic handler: React 18 delegates all listeners on the
+      // #root container, so pointer events bubbling off any point in the row
+      // open it. The row's right side is an action strip (⋯ menu, new chat,
+      // our move button), not project info — hovering there should not raise
+      // the card. Stopping pointermove/pointerover bubbling at the row level
+      // prevents the #root delegation from ever firing for those targets.
+      const hoverGuards = new Map();
+      let cardOff = false;
+
+      function setCardOff(on) {
+        if (on === cardOff) return;
+        cardOff = on;
+        document.documentElement.classList.toggle("explodex-hovercard-off", on);
+      }
+
+      function bindHoverGuard(row) {
+        if (hoverGuards.has(row)) return;
+        // Data marker (not just the Map) so a hot re-injection on the same DOM
+        // node does not stack a second copy of the listener.
+        if (row.getAttribute("data-explodex-hover-guard") === "1") return;
+        // Per-row trailing state: entering the right zone from the left means
+        // Codex already armed its open-timer from the sweep across the label —
+        // blocking later moves cannot un-arm it. React synthesizes
+        // onPointerLeave from a bubbling pointerout whose relatedTarget lies
+        // outside the trigger subtree, so we dispatch exactly that once per
+        // transition; Codex's own handler then closes the card. Re-entry into
+        // the left zone is left untouched, so the card opens there as usual.
+        let inRight = false;
+        const suppress = (event) => {
+          const target = event.target;
+          if (!target || target.nodeType !== 1 || !row.contains(target)) return;
+          let hide = false;
+          if (target !== row) {
+            const btn = target.closest("button");
+            if (btn && row.contains(btn)) hide = true; // any action button
+            if (!hide) {
+              // Right-side cluster: a direct child <div> that is not the
+              // flex-1 content area (the responsive project-info zone).
+              const child = [...row.children].find((c) => c.contains(target));
+              if (child && child.tagName === "DIV" && !String(child.className).includes("flex-1"))
+                hide = true;
+            }
+          } else {
+            // Pointer over the row's own padding at the far right edge.
+            const rect = row.getBoundingClientRect();
+            hide = event.clientX > rect.right - 24;
+          }
+          if (!hide) {
+            inRight = false;
+            setCardOff(false);
+            return;
+          }
+          setCardOff(true);
+          event.stopPropagation();
+          if (inRight) return;
+          inRight = true;
+          row.dispatchEvent(
+            new PointerEvent("pointerout", {
+              bubbles: true,
+              composed: true,
+              pointerId: event.pointerId ?? 1,
+              relatedTarget: document.body,
+            }),
+          );
+        };
+        row.addEventListener("pointermove", suppress);
+        row.addEventListener("pointerover", suppress);
+        row.setAttribute("data-explodex-hover-guard", "1");
+        hoverGuards.set(row, suppress);
       }
 
       function setBlockHidden(block, hidden) {
@@ -393,6 +500,7 @@
           const entry = byId.get(item.id);
           if (!entry) continue;
           ensureMoveButton(entry.header, entry.id);
+          bindHoverGuard(entry.header);
           const gid = state.membership[entry.id];
           entry.block.classList.toggle("explodex-in-group", Boolean(gid));
           setBlockHidden(entry.block, !!(gid && collapsed.has(gid)));
@@ -409,11 +517,13 @@
 
       async function reconcile() {
         if (disposed || reconcileInFlight) return;
+        const t0 = nowMs();
         await hydrate();
         if (disposed) return;
         reconcileInFlight = true;
         try {
           doReconcile();
+          recordTiming("reconcile-async", t0);
         } catch (err) {
           log.warn("project groups reconcile failed", err);
         } finally {
@@ -428,6 +538,42 @@
           reconcileTimer = null;
           void reconcile();
         }, RECONCILE_DEBOUNCE_MS);
+      }
+
+      function reconcileNow() {
+        if (disposed) return;
+        if (reconcileTimer != null) {
+          global.clearTimeout(reconcileTimer);
+          reconcileTimer = null;
+        }
+        // Synchronous fast path once state is hydrated: awaiting hydrate()
+        // would defer the visual collapse by a microtask+ at minimum, which
+        // the user reads as a laggy first click.
+        //
+        // `reconcileInFlight` guards the *async* reconcile() (it awaits
+        // hydrate(), so two passes could interleave). doReconcile() itself is
+        // synchronous and cannot re-enter itself, so gating the fast path on
+        // it turned every click that landed during a sidebar mutation burst
+        // into a chain of 16 ms retries behind an observer that keeps
+        // re-arming — that was the "first click after opening a chat does
+        // nothing" report (2026-09-28).
+        if (hydrated) {
+          const t0 = nowMs();
+          try {
+            doReconcile();
+            recordTiming("commit-sync", t0);
+          } catch (err) {
+            log.warn("project groups reconcile failed", err);
+          }
+          return;
+        }
+        // reconcile() is re-entrant-guarded; if a pass is mid-flight, retry
+        // next tick so the user's change is never dropped.
+        if (reconcileInFlight) {
+          global.setTimeout(reconcileNow, 16);
+          return;
+        }
+        void reconcile();
       }
 
       function bindSidebarObserver() {
@@ -485,6 +631,13 @@
         backdrop.addEventListener("pointerdown", (event) => {
           if (event.target === backdrop) closeMenu();
         });
+        // Kill the native menu while ours is open: right-clicking anywhere in
+        // the backdrop/panel used to raise Electron's "Select All" on top of
+        // our still-visible menu (two menus at once).
+        backdrop.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
 
         const panel = document.createElement("div");
         panel.setAttribute("role", "menu");
@@ -495,7 +648,12 @@
           "background:var(--color-token-dropdown-background,var(--color-bg-primary,#111));" +
           "color:var(--color-token-dropdown-foreground,inherit);" +
           "box-shadow:0 12px 32px color-mix(in srgb,#000 45%,transparent);" +
-          "font:13px/1.4 system-ui,-apple-system,sans-serif";
+          "font:13px/1.4 system-ui,-apple-system,sans-serif;" +
+          "-webkit-user-select:none;user-select:none";
+        panel.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
 
         const wrap = document.createElement("div");
         wrap.appendChild(backdrop);
@@ -552,7 +710,8 @@
             input.style.cssText =
               "display:block;width:calc(100% - 20px);margin:2px 10px 8px;padding:6px 8px;border-radius:6px;" +
               "border:1px solid color-mix(in srgb, currentColor 20%, transparent);" +
-              "background:color-mix(in srgb, currentColor 5%, transparent);color:inherit;font:13px system-ui,-apple-system,sans-serif";
+              "background:color-mix(in srgb, currentColor 5%, transparent);color:inherit;font:13px system-ui,-apple-system,sans-serif;" +
+              "-webkit-user-select:text;user-select:text";
             input.addEventListener("keydown", (event) => {
               event.stopPropagation();
               if (event.key === "Enter") {
@@ -638,16 +797,43 @@
         closeMenu();
       }
 
-      // Delegated on document (not per-row) so teardown fully removes it:
-      // listeners bound onto Codex-owned nodes survive hot re-injection.
-      function onRowContextMenu(event) {
-        const header = event.target.closest?.("[data-app-action-sidebar-project-id]");
-        if (!header) return;
-        const projectId = header.getAttribute("data-app-action-sidebar-project-id");
-        if (!projectId) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openProjectMenu(null, projectId, { x: event.clientX, y: event.clientY });
+      // Explodex-owned chrome must never raise Electron's native context
+      // menu: right-clicking a group header (or any of our buttons) used to
+      // pop "Select All" — CSS user-select:none alone does not stop it;
+      // preventDefault on the contextmenu event does. Capturing on window
+      // also keeps Codex's own row menu from firing on our elements.
+      // Project rows intentionally do NOT get a right-click handler here:
+      // grouping is changed via the row's grid icon only, and the native
+      // project context menu stays untouched.
+      const CHROME_SELECTOR =
+        "[data-explodex-group-header],[data-explodex-group-add],[data-explodex-group-add-inline]," +
+        "[data-explodex-group-move],[data-explodex-color-picker],[data-explodex-copy-path]," +
+        "[data-explodex-footer-plugins],.ex-nav-btn";
+
+      function onChromeContextMenu(event) {
+        // composedPath() so chrome living inside shadow roots (folder rows) is
+        // still matched — event.target there is retargeted to the host.
+        const hops = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+        for (const node of hops) {
+          if (!node || node.nodeType !== 1 || typeof node.closest !== "function") continue;
+          if (node.closest(CHROME_SELECTOR)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          if (node === window || node === document) break;
+        }
+      }
+
+      // Clears the hover-card backstop once the pointer is outside any guarded
+      // row. Right-zone events are stopPropagation()ed by the row guard, so
+      // they never reach here and the flag stays set while the user hovers the
+      // action strip; the first event anywhere else releases it.
+      function onDocPointerOver(event) {
+        if (!cardOff) return;
+        const target = event.target;
+        if (target && target.nodeType === 1 && target.closest("[data-explodex-hover-guard]")) return;
+        setCardOff(false);
       }
 
       // --- wiring ---------------------------------------------------------------------
@@ -660,8 +846,9 @@
       });
       global.addEventListener("keydown", onKeyDown, true);
       global.addEventListener("pointerdown", onGlobalPointerDown, true);
-      global.addEventListener("contextmenu", onRowContextMenu, true);
+      global.addEventListener("contextmenu", onChromeContextMenu, true);
       global.addEventListener("scroll", closeMenu, true);
+      global.addEventListener("pointerover", onDocPointerOver);
 
       void hydrate()
         .then(() => {
@@ -680,8 +867,16 @@
         unsubscribeSidebar?.();
         global.removeEventListener("keydown", onKeyDown, true);
         global.removeEventListener("pointerdown", onGlobalPointerDown, true);
-        global.removeEventListener("contextmenu", onRowContextMenu, true);
+        global.removeEventListener("contextmenu", onChromeContextMenu, true);
         global.removeEventListener("scroll", closeMenu, true);
+        global.removeEventListener("pointerover", onDocPointerOver);
+        setCardOff(false);
+        for (const [row, suppress] of hoverGuards) {
+          row.removeEventListener("pointermove", suppress);
+          row.removeEventListener("pointerover", suppress);
+          row.removeAttribute("data-explodex-hover-guard");
+        }
+        hoverGuards.clear();
         for (const entry of projectEntries()) {
           setBlockHidden(entry.block, false);
           entry.block.classList.remove("explodex-in-group");

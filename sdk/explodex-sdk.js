@@ -510,6 +510,10 @@
         font: 445 14px/1.43 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         text-align: left; cursor: pointer; -webkit-app-region: no-drag;
         outline: none;
+        /* Selectable labels invite Electron's native "Select All" menu on
+           right-click, stacking on top of Explodex menus — keep chrome
+           non-selectable (inputs opt back in below). */
+        -webkit-user-select: none; user-select: none;
       }
       .ex-nav-btn:hover {
         background: var(--color-token-list-hover-background, color-mix(in srgb, currentColor 8%, transparent));
@@ -540,6 +544,11 @@
         color: var(--color-token-dropdown-foreground, inherit);
         box-shadow: 0 12px 40px color-mix(in srgb, #000 45%, transparent);
         font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        -webkit-user-select: none; user-select: none;
+      }
+      .ex-popover input, .ex-popover textarea,
+      .ex-dialog input, .ex-dialog textarea {
+        -webkit-user-select: text; user-select: text;
       }
       .ex-popover-header {
         display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -563,6 +572,7 @@
         color: var(--color-token-dropdown-foreground, inherit);
         box-shadow: 0 16px 48px color-mix(in srgb, #000 50%, transparent);
         font: 13px/1.45 system-ui, -apple-system, sans-serif;
+        -webkit-user-select: none; user-select: none;
       }
       .ex-plugin-row {
         display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
@@ -1987,6 +1997,24 @@
     return mount;
   }
 
+  // One shared MutationObserver for all zone watchers. Previously every
+  // observeZone() call created its own observer on documentElement's whole
+  // subtree — with 6+ live watchers that meant every chat-streaming mutation
+  // batch was delivered N times and each watcher re-ran its callback every
+  // animation frame, which is what made the sidebar crawl after alt-tabbing
+  // back into an active session (user report 2026-09-28).
+  const zoneWatchers = new Set();
+  let zoneSharedObserver = null;
+
+  function ensureZoneObserver() {
+    if (zoneSharedObserver) return;
+    zoneSharedObserver = new MutationObserver((records) => {
+      for (const notify of zoneWatchers) notify(records);
+    });
+    zoneSharedObserver.observe(document.documentElement, { childList: true, subtree: true });
+    observers.add(zoneSharedObserver);
+  }
+
   function observeZone(zoneId, callback, options = {}) {
     const { once = false, includeMutations = false } = options;
     let lastAnchor = null;
@@ -1999,8 +2027,7 @@
         global.cancelAnimationFrame(frame);
         frame = null;
       }
-      observer.disconnect();
-      observers.delete(observer);
+      zoneWatchers.delete(notify);
     };
 
     const check = () => {
@@ -2025,9 +2052,28 @@
       frame = global.requestAnimationFrame(check);
     };
 
-    const observer = new MutationObserver(schedule);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-    observers.add(observer);
+    // includeMutations watchers used to re-fire on ANY DOM change in the app.
+    // Now they only re-fire when a record actually touches the zone subtree.
+    const notify = includeMutations
+      ? (records) => {
+          if (stopped) return;
+          const anchor = resolveZoneAnchor(zoneId);
+          if (!anchor) {
+            schedule(); // zone may have just appeared — let check() resolve it
+            return;
+          }
+          for (const rec of records) {
+            const t = rec.target;
+            if (t === anchor || (t && t.nodeType === 1 && anchor.contains(t))) {
+              schedule();
+              return;
+            }
+          }
+        }
+      : schedule;
+
+    ensureZoneObserver();
+    zoneWatchers.add(notify);
     schedule();
 
     return stop;

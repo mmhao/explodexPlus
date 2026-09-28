@@ -972,14 +972,27 @@
         }
         observer?.disconnect();
         observer = null;
+        if (bindTimer != null) global.clearTimeout(bindTimer);
+        bindTimer = null;
         restoreBaselineEffort({ force: true }).catch(() => {});
       }
 
       attach();
       log.info("composer listeners attached");
+      // Chat streaming mutates documentElement constantly; resolving the
+      // composer + measuring it on every batch starves the main thread at the
+      // exact moment the user alt-tabs back and clicks. Re-check at most
+      // ~5x/sec and only re-measure a hint that is actually open.
+      let bindTimer = null;
+      const BIND_INTERVAL_MS = 200;
       observer = new MutationObserver(() => {
-        bindComposerInput();
-        if (isComposerFocused()) refreshHintIfNeeded();
+        if (disposed || bindTimer != null) return;
+        bindTimer = global.setTimeout(() => {
+          bindTimer = null;
+          if (disposed) return;
+          bindComposerInput();
+          if (hintOpen && isComposerFocused()) refreshHintIfNeeded();
+        }, BIND_INTERVAL_MS);
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });
 
