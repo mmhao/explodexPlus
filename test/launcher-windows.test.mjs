@@ -8,7 +8,7 @@ import {
 } from "../lib/launcher-windows.mjs";
 
 describe("cmd wrapper", () => {
-  test("embeds node, cli script, and debug port via env var", () => {
+  test("bakes the install-time node path with a PATH fallback", () => {
     const cmd = buildCmdWrapper({
       nodeExe: "C:\\nodejs\\node.exe",
       cliScript: "H:\\explodexPlus\\bin\\explodex.mjs",
@@ -16,8 +16,15 @@ describe("cmd wrapper", () => {
     });
     expect(cmd).toMatch(/^@echo off\r\n/);
     expect(cmd).toContain('set "EXPLODEX_DEBUG_PORT=9400"');
-    expect(cmd).toContain('"C:\\nodejs\\node.exe" "H:\\explodexPlus\\bin\\explodex.mjs" --launch');
+    expect(cmd).toContain('set "NODE=C:\\nodejs\\node.exe"');
+    expect(cmd).toContain('if not exist "%NODE%" set "NODE=node"');
+    expect(cmd).toContain('"%NODE%" "H:\\explodexPlus\\bin\\explodex.mjs" --launch');
     expect(cmd).toContain("if errorlevel 1 pause");
+  });
+  test("bare node stays direct, no fallback indirection", () => {
+    const cmd = buildCmdWrapper({ nodeExe: "node", cliScript: "cli.mjs" });
+    expect(cmd).toContain('"node" "cli.mjs" --launch');
+    expect(cmd).not.toContain('set "NODE=');
   });
   test("falls back to the default port", () => {
     expect(buildCmdWrapper({ nodeExe: "node", cliScript: "cli.mjs" })).toContain("EXPLODEX_DEBUG_PORT=9333");

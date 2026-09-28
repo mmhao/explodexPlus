@@ -21,15 +21,15 @@ See [installation.md](./installation.md) for the full state table and recovery c
 ## Source development
 
 ```sh
-bun run dev
+pnpm run dev
 ```
 
 Development packages `dist/Explodex.app` from `templates/explodex-app/`, launches with CDP on port `9333`, injects repo SDK/plugins, and starts Chrome DevTools MCP. Development data stays isolated under `.explodex-user-data/` by default.
 
 ```sh
-bun run inject
-bun run package
-bun run validate
+pnpm run inject
+pnpm run package
+pnpm run validate
 ```
 
 `dist/Explodex.app`, `scripts/package-app.ts`, and templates are source-development tools. They are not npm distribution artifacts. No production ZIP, copied release app, `install.sh`, signing, or xattr-clearing flow is supported.

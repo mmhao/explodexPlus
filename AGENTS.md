@@ -76,32 +76,32 @@ docs/                      # Architecture and lifecycle docs (maintain these)
 ## Commands
 
 ```bash
-bun run dev                 # Package dist/Explodex.app, start chrome-devtools-mcp, launch
-bun run inject              # Re-inject SDK + plugins into running debug session
-bun run package             # Build dist/Explodex.app only
-bun run layout:snapshot     # JSON layout landmarks from live renderer (see § Layout snapshots)
+pnpm run dev                 # Package dist/Explodex.app, start chrome-devtools-mcp, launch
+pnpm run inject              # Re-inject SDK + plugins into running debug session
+pnpm run package             # Build dist/Explodex.app only
+pnpm run layout:snapshot     # JSON layout landmarks from live renderer (see § Layout snapshots)
 ```
 
 ## Verification
 
 When the user asks to **test if working** (or similar), verify behavior in the **live Codex renderer** via **Chrome DevTools MCP** connected to the Electron app — not by code review alone.
 
-1. Ensure a debug session is up (`bun run dev`, or an already-running Explodex with CDP on `EXPLODEX_DEBUG_PORT`, default `9333`).
-2. After code changes, run `bun run package` then `bun run inject` (or restart `bun run dev`). Already-loaded dynamic plugins may need `Explodex.plugins.unload(id)` then `Explodex.plugins.load(id)` via `evaluate_script`, or a renderer reload.
+1. Ensure a debug session is up (`pnpm run dev`, or an already-running Explodex with CDP on `EXPLODEX_DEBUG_PORT`, default `9333`).
+2. After code changes, run `pnpm run package` then `pnpm run inject` (or restart `pnpm run dev`). Already-loaded dynamic plugins may need `Explodex.plugins.unload(id)` then `Explodex.plugins.load(id)` via `evaluate_script`, or a renderer reload.
 3. Use the **chrome-devtools** MCP tools against `http://127.0.0.1:9333` (`list_pages` → `select_page` → `evaluate_script` / `take_snapshot` / `click`).
 4. Confirm the feature under test: plugin registration, DOM hooks, bridge calls, and user-visible behavior.
 
-`bun run dev` starts `chrome-devtools-mcp` with `--browser-url` pointed at the app; agents should use that MCP server for renderer inspection and interaction.
+`pnpm run dev` starts `chrome-devtools-mcp` with `--browser-url` pointed at the app; agents should use that MCP server for renderer inspection and interaction.
 
 ### Layout snapshots
 
 Capture DOM landmarks from the live renderer when Codex may have changed sidebar/shell layout, or before editing zone selectors:
 
 ```bash
-bun run layout:snapshot
+pnpm run layout:snapshot
 # optional explicit path:
-EXPLODEX_LAYOUT_SNAPSHOT_OUT=./layout.json bun run layout:snapshot
-bun run react-devtools   # DOM fiber chains; reload renderer for full DevTools UI
+EXPLODEX_LAYOUT_SNAPSHOT_OUT=./layout.json pnpm run layout:snapshot
+pnpm run react-devtools   # DOM fiber chains; reload renderer for full DevTools UI
 ```
 
 Default output: `~/.explodex/snapshots/layout-<timestamp>.json`. Script: `scripts/cdp-layout-snapshot.ts`.
@@ -112,8 +112,8 @@ When the user asks to **compare layout snapshots**, **diff layout**, **check for
 
 1. **Capture a fresh snapshot** with the app in a known state (home or thread view, sidebar open, plugins loaded):
    ```bash
-   bun run layout:snapshot
-   EXPLODEX_LAYOUT_SNAPSHOT_OUT=/tmp/layout-after.json bun run layout:snapshot
+   pnpm run layout:snapshot
+   EXPLODEX_LAYOUT_SNAPSHOT_OUT=/tmp/layout-after.json pnpm run layout:snapshot
    ```
 2. **Pick a baseline** — previous snapshot from `~/.explodex/snapshots/`, a committed reference under `docs/` if one exists, or a second capture from the old `vendor/Codex.app` if still available.
 3. **Diff the `pages[0].snapshot` objects** — agents should run the comparison themselves (do not only describe commands):
@@ -148,17 +148,17 @@ See [docs/codex-architecture.md](docs/codex-architecture.md) §4 sidebar chrome 
 When investigating **UI freezes**, runaway CPU, or suspected **render loops** in the Codex renderer (plugin sidebar remounts, popover churn, Statsig/query invalidation storms), use **react-scan** before guessing from code alone.
 
 ```bash
-bun scripts/cdp-react-scan.ts
+pnpm exec bun scripts/cdp-react-scan.ts
 # optional: mirror hot components to the console
-EXPLODEX_REACT_SCAN_LOG=1 bun scripts/cdp-react-scan.ts
+EXPLODEX_REACT_SCAN_LOG=1 pnpm exec bun scripts/cdp-react-scan.ts
 ```
 
-This injects react-scan into the live renderer via CDP (same port as `bun run inject`). Codex CSP blocks external script tags — the script fetches the bundle on the host and evaluates it through CDP. Codex is a production React build — the script sets `dangerouslyForceRunInProduction: true`. A toolbar appears in-app; components that re-render excessively are highlighted.
+This injects react-scan into the live renderer via CDP (same port as `pnpm run inject`). Codex CSP blocks external script tags — the script fetches the bundle on the host and evaluates it through CDP. Codex is a production React build — the script sets `dangerouslyForceRunInProduction: true`. A toolbar appears in-app; components that re-render excessively are highlighted.
 
 **Workflow for agents:**
 
 1. Reproduce the jank (load plugin, open popover, navigate to settings, etc.).
-2. Run `bun scripts/cdp-react-scan.ts` (or inject once per renderer reload).
+2. Run `pnpm exec bun scripts/cdp-react-scan.ts` (or inject once per renderer reload).
 3. Exercise the UI — watch which subtrees flash repeatedly (sidebar, personalization, popover host).
 4. Map hot components back to plugin code (`paintNav`, `observeZone`, `refresh` ↔ `reopenPopover`, bridge cache sync).
 5. Fix the feedback loop; re-scan to confirm the highlight storm stopped.

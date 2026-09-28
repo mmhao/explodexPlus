@@ -4,10 +4,14 @@
 
 Explodex Plus is a fork of [explodex](https://github.com/dan-dr/explodex) with a Windows platform adapter and two extra plugins. It extends OpenAI's [Codex](https://openai.com/codex) desktop app via the Chrome DevTools Protocol: the original, signed app is launched with a debug flag and the plugin SDK is injected at runtime. **Nothing in the Codex installation is ever modified**, so app updates never overwrite (or get broken by) your mods. Used BetterDiscord or Legcord? Same idea, for Codex.
 
+🇨🇳 **中文文档见 [README.zh-CN.md](README.zh-CN.md)**（`docs/zh/` 下有全套中文版）。
+
 ```sh
-npm install -g explodex-plus
+npm install -g explodex-plus   # or: pnpm add -g explodex-plus
 explodex-plus
 ```
+
+Requires **Node ≥ 22** (check with `node -v`). The package manager you use to *install* the CLI (npm, pnpm, Bun, Yarn) is a free choice; Node is the runtime.
 
 ## What you get
 
@@ -21,16 +25,33 @@ Everything [upstream explodex](https://github.com/dan-dr/explodex) ships (usage 
 ## Windows install (3 steps)
 
 1. Install the **Codex desktop app from the Microsoft Store** (it must be the MSIX package; Explodex Plus discovers it at runtime with `Get-AppxPackage` — no hardcoded paths).
-2. `npm install -g explodex-plus` (Node ≥ 22).
+2. `npm install -g explodex-plus` (Node ≥ 22), or with pnpm: `pnpm add -g explodex-plus`.
 3. Run `explodex-plus`.
 
-It starts Codex with `--remote-debugging-port=9333` (activated through `shell:AppsFolder` so the app keeps its MSIX package identity) and injects the SDK + plugins. You'll be offered a **"Codex (Explodex)" launcher script** — from then on, start Codex through it whenever you want your mods; the plain Store icon always gives you an unmodified Codex.
+It starts Codex with `--remote-debugging-port=9333` (activated through `shell:AppsFolder` so the app keeps its MSIX package identity) and injects the SDK + plugins. You'll be offered a **"Codex (Explodex)" launcher** — a desktop shortcut *and* a Start Menu entry — from then on, start Codex through it whenever you want your mods; the plain Store icon always gives you an unmodified Codex.
+
+### Running from this repo instead
+
+Useful while developing plugins. With **pnpm** (the repo's primary package manager) or npm:
+
+```sh
+pnpm install                    # or: npm install — no system Bun needed
+node bin/explodex.mjs install   # with Node ≥ 22; creates desktop + Start Menu shortcuts
+node bin/explodex.mjs           # launch Codex with SDK + plugins injected
+```
+
+Repo tooling (`pnpm test`, `pnpm run validate`, `pnpm run typecheck`, …) drives an internal **Bun devDependency** installed into `node_modules` — you never need Bun on your machine. `check:docs` verifies the English/Chinese documentation mirror (every `docs/*.md` has a `docs/zh/` twin and no relative link is broken).
+
+`install` writes a tiny `~\.explodex\bin\Codex (Explodex).cmd` wrapper and two `.lnk` shortcuts pointing at it. See the FAQ below for where those land on machines with a redirected desktop.
 
 ### FAQ
 
 - **Why must I start Codex from the launcher?** The debug flag has to be present at process start. A Codex already running without it can't be injected — the launcher tells you to quit Codex fully (including tray processes) first.
+- **I ran `install` but there's no desktop shortcut.** Your Desktop folder is probably redirected away from `%USERPROFILE%\Desktop` (corporate setups and OneDrive tidying move it to e.g. `E:\Desktop`). The launcher reads the real location from the registry (`HKCU\…\User Shell Folders`) and writes there — but a *desktop-organizer app* that paints its own "desktop" view won't show system-desktop icons; add the real Desktop folder to its scope. Junctions/symlinks anywhere along the path are fine (verified).
+- **Shortcut opens a console error instead of Codex.** The wrapper first tries the Node install that was active when `install` ran (its absolute path is baked in), then falls back to `node` on PATH. Either both are missing/too old (the CLI needs **Node ≥ 22**) — re-run `install` with a modern Node to refresh the baked path. Moving the repo (when installing from source) or uninstalling that Node version are the usual causes; `install` is idempotent, run it again.
+- **`pnpm run format:check` is red right after cloning.** Pre-existing: some fork-owned files are not prettier-clean in the committed tree, unrelated to your install method. Run `pnpm format` to normalize.
 - **An update broke a plugin?** Updates never delete your mods; at worst a DOM selector stops matching. Re-launch via the launcher, and check [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the selector registry. Prompting Codex with the bundled `explodex-plugin-builder` skill is the intended repair loop.
-- **How do I uninstall?** Delete the launcher shortcut and `%USERPROFILE%\.explodex` (plus `npm rm -g explodex-plus`). The Codex install itself was never touched.
+- **How do I uninstall?** `explodex-plus uninstall` removes the wrapper and both shortcuts (plus `npm rm -g explodex-plus` and, if wanted, `~/.explodex`). The Codex install itself was never touched.
 - **Do my login/settings/projects survive?** Yes — Explodex Plus does not override the Electron user-data directory.
 
 ## macOS install
@@ -62,9 +83,11 @@ Run Explodex Plus, install the bundled skill (`explodex-plus install-skill`), an
 
 Explodex Plus injects locally into Codex's renderer. It **never modifies** the installed app and runs entirely on your machine. Because it hooks Codex internals, a plugin may need an update when Codex ships a new release — see [docs/sdk-fragility.md](docs/sdk-fragility.md) and the version matrix in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
-Not affiliated with, endorsed by, or supported by OpenAI. Fork preserved under the [upstream license](LICENSE).
+Not affiliated with, endorsed by, or supported by OpenAI. Upstream [dan-dr/explodex](https://github.com/dan-dr/explodex) does not declare a license (no LICENSE file, no `license` field), so all rights are reserved by their respective authors by default; this fork inherits that status.
 
 ## Docs
+
+Every doc has a Chinese twin under [`docs/zh/`](docs/zh/README.md) (linked below).
 
 | Doc | Contents |
 | --- | -------- |

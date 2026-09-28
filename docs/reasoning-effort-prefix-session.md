@@ -12,8 +12,8 @@
 
 **Implementation**
 
-- Plugin: [`plugins/reasoning-effort-prefix/index.js`](../plugins/reasoning-effort-prefix/index.js)
-- Plugin docs: [`plugins/reasoning-effort-prefix/README.md`](../plugins/reasoning-effort-prefix/README.md)
+- Plugin: `plugins/reasoning-effort-prefix/index.js` (this plugin shipped under this name during the session; it now lives as [`plugins/effort-shortcuts/`](../plugins/effort-shortcuts/))
+- Plugin docs: `plugins/reasoning-effort-prefix/README.md`
 - SDK: [`sdk/explodex-sdk.js`](../sdk/explodex-sdk.js) (`bridge.send`, `composer.*`)
 - Deploy: `bun run package` (which runs `scripts/package-app.ts`) → `Explodex.app`
 

@@ -22,12 +22,18 @@ For packaging, install, user-data, and plugin load-path design notes, see [local
 
 ## Prerequisites
 
-Install [Bun](https://bun.sh). Node 22 is the target runtime (see `.node-version`).
+Node **≥ 22** is the target runtime (see `.node-version`) and **pnpm** is the primary package manager (`npm` also works). You do *not* need a system Bun — the repo installs Bun 1.3.14 as a devDependency into `node_modules/.bin` and every `pnpm run …` / `pnpm exec bun …` picks it up from there.
+
+```sh
+pnpm install        # or: npm install
+```
+
+> pnpm does not run dependency postinstall scripts by default; `package.json` allowlists Bun via `pnpm.onlyBuiltDependencies`, so `pnpm install` still lands a working `node_modules/.bin/bun`. On npm, `npm install` runs it natively.
 
 ## Local Development
 
 ```sh
-bun run dev
+pnpm run dev
 ```
 
 This packages `dist/Explodex.app`, launches it, waits for debug port `9333`, and starts `chrome-devtools-mcp` for agent inspection (see `.mcp.json`).
@@ -37,7 +43,7 @@ The CDP injector applies the SDK/catalog to every matching Codex renderer target
 Re-inject after editing SDK or plugins:
 
 ```sh
-bun run inject
+pnpm run inject
 ```
 
 The injector publishes the refreshed plugin catalog before evaluating the SDK.
@@ -46,13 +52,13 @@ new plugins and removes deleted plugin IDs without reloading the renderer.
 
 ### Layout snapshot (sidebar / shell landmarks)
 
-After `bun run dev` (or any session with CDP on `9333`), capture a JSON layout
+After `pnpm run dev` (or any session with CDP on `9333`), capture a JSON layout
 report for debugging selector drift:
 
 ```sh
-bun scripts/cdp-layout-snapshot.ts
+pnpm exec bun scripts/cdp-layout-snapshot.ts
 # optional explicit output path:
-EXPLODEX_LAYOUT_SNAPSHOT_OUT=./layout.json bun scripts/cdp-layout-snapshot.ts
+EXPLODEX_LAYOUT_SNAPSHOT_OUT=./layout.json pnpm exec bun scripts/cdp-layout-snapshot.ts
 ```
 
 Default write path: `~/.explodex/snapshots/layout-<timestamp>.json`. The snapshot
@@ -67,23 +73,23 @@ hook (for reload) and immediately walks `__reactFiber$*` chains on sidebar DOM
 nodes — no reload required for the fiber report:
 
 ```sh
-bun run react-devtools
+pnpm run react-devtools
 # optional: also attempt react-devtools-inline backend eval (needs renderer reload for UI)
-EXPLODEX_REACT_DEVTOOLS_BACKEND=1 bun run react-devtools
+EXPLODEX_REACT_DEVTOOLS_BACKEND=1 pnpm run react-devtools
 ```
 
-Pair with `bun run layout:snapshot` when Codex changes layout between releases.
+Pair with `pnpm run layout:snapshot` when Codex changes layout between releases.
 
-`bun run inject` (`--inject-only`) connects to whatever is listening on the debug port — including an SSH tunnel to a remote Codex. The **Explodex.app launcher** is stricter: it only takes the “inject into existing instance” fast path when **local** Codex owns port `9333` (or the process is otherwise identifiable as `Codex.app/Contents/MacOS/Codex`). If another process (e.g. `ssh -L 9333:…`) holds the port, the launcher reports a port conflict instead of falsely claiming injection into a running local Codex.
+`pnpm run inject` (`--inject-only`) connects to whatever is listening on the debug port — including an SSH tunnel to a remote Codex. The **Explodex.app launcher** is stricter: it only takes the “inject into existing instance” fast path when **local** Codex owns port `9333` (or the process is otherwise identifiable as `Codex.app/Contents/MacOS/Codex`). If another process (e.g. `ssh -L 9333:…`) holds the port, the launcher reports a port conflict instead of falsely claiming injection into a running local Codex.
 
 ## Distribution boundary
 
-Production distribution is through the npm registry and supports global installation with pnpm, Bun, npm, or Yarn. The generated user launcher is documented in [installation.md](./installation.md). `bun run package` and `dist/Explodex.app` remain source-development tools only.
+Production distribution is through the npm registry and supports global installation with pnpm, Bun, npm, or Yarn. The generated user launcher is documented in [installation.md](./installation.md). `pnpm run package` and `dist/Explodex.app` remain source-development tools only.
 
 ## Validate
 
 ```sh
-bun run validate
+pnpm run validate
 ```
 
 Checks shell syntax, Bun/TS syntax, JS entrypoints, JSON manifests, npm injector build, and launcher tests.
@@ -94,8 +100,8 @@ Checks shell syntax, Bun/TS syntax, JS entrypoints, JSON manifests, npm injector
 2. Create `plugins/<id>/index.js`.
 3. Register via `Explodex.plugins.register`.
 4. Return a teardown that removes listeners, timers, observers, and mounted UI.
-5. Run `bun run validate`.
-6. Run `bun run inject` (or `bun run dev` for a fresh session).
+5. Run `pnpm run validate`.
+6. Run `pnpm run inject` (or `pnpm run dev` for a fresh session).
 
 Keep plugin state keys namespaced with `explodex-`. When renaming old keys, read legacy keys and write the new key on the next update.
 
@@ -113,11 +119,11 @@ or point the user plugins directory at your repo:
 export EXPLODEX_USER_PLUGINS_DIR="$(pwd)/plugins"
 ```
 
-Then run `bun run inject` after editing plugin source.
+Then run `pnpm run inject` after editing plugin source.
 
 ## Browser Verification
 
-`.mcp.json` configures `chrome-devtools-mcp` against `http://127.0.0.1:9333`. `bun run dev` starts that MCP server automatically. Cursor agents should use the chrome-devtools MCP tools after dev is running.
+`.mcp.json` configures `chrome-devtools-mcp` against `http://127.0.0.1:9333`. `pnpm run dev` starts that MCP server automatically. Cursor agents should use the chrome-devtools MCP tools after dev is running.
 
 ## Public Repo Hygiene
 

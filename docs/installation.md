@@ -18,7 +18,7 @@ yarn global add explodex
 explodex
 ```
 
-Bun is the runtime used by the project. Node.js 22+ should also be compatible.
+Node.js 22+ is the runtime for the installed CLI (any of the package managers above can install the package; the repo's own toolchain uses pnpm/npm with an internal Bun devDependency — see [development.md](./development.md)).
 
 The package-manager command installs Explodex globally. Running `explodex` then opens the launcher app (creating it the first time, with confirmation), offers the plugin creator skill on the first interactive run, and checks the cached npm registry version notification.
 
