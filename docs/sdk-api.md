@@ -543,11 +543,19 @@ await flags.propagate({
 });
 
 flags.readStatsigGate(gateId): boolean | null
+flags.readStatsigGateCatalog(): { byId: Map<string, {name, value}>, byName: Map<string, Set<string>> }
 flags.setStatsigGateOverride(gateId, value): boolean   // value null clears for this plugin
 flags.clearStatsigGateOverrides(): void
 flags.invalidateQueries(queryKeys): Promise<void>
 flags.getQueryClient(): unknown | null
 ```
+
+`readStatsigGateCatalog()` returns the parsed contents of localStorage's
+`statsig.cached.evaluations.*` blobs (multi-MB JSON, ~30 ms to parse). The
+result is cached and invalidated by a cheap value-length signature plus a
+10 s TTL backstop; a failed parse is never cached (readers retry next call).
+Treat the returned maps as read-only. Use it instead of re-parsing the blob
+per feature — see [COMPATIBILITY.md](COMPATIBILITY.md) responsiveness notes.
 
 `propagate()` always emits Statsig `values_updated` (so hooks recompute), then
 invalidates standard host queries when `hostId` is set:

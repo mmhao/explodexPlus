@@ -489,6 +489,13 @@ export interface FlagsClearStatsigGateOptions {
  * Propagate config and Statsig changes so Codex React hooks and React Query caches
  * pick up new values without a full renderer reload.
  */
+export interface FlagsStatsigGateCatalog {
+  /** gateId → { name, value } for every stored boolean gate. */
+  byId: Map<string, { name: string | null; value: boolean | null }>;
+  /** gate name → gate IDs carrying that name. */
+  byName: Map<string, Set<string>>;
+}
+
 export interface FlagsAPI {
   /** React Query client from the Codex provider tree, if mounted. */
   getQueryClient(): unknown | null;
@@ -496,6 +503,12 @@ export interface FlagsAPI {
   getStatsigClients(): unknown[];
   /** Read a gate from localStorage cache, falling back to `checkGate`. */
   readStatsigGate(gateId: string): boolean | null;
+  /**
+   * Parsed `statsig.cached.evaluations.*` gates, cached across calls and
+   * invalidated when the localStorage blob's signature changes (plus a TTL
+   * backstop). Read-only — treat the returned maps as immutable.
+   */
+  readStatsigGateCatalog(): FlagsStatsigGateCatalog;
   /** Apply a local Statsig gate override for one plugin owner. */
   setStatsigGateOverride(
     gateId: string,

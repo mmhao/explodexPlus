@@ -246,51 +246,35 @@
       }
 
       function readPersistedGateHints() {
-        const raw = storage.persisted.get(PERSISTED_GATE_HINTS_KEY, {});
-        return raw && typeof raw === "object" ? raw : {};
+        const raw = storage.persisted.get(PERSISTED_GATE_HINTS_KEY, null);
+        if (raw == null) return {};
+        // A failed JSON.parse makes storage.persisted.get return the raw
+        // string. Distinguishing that from a missing key matters: treating
+        // corrupt data as empty made rememberGateHints clobber the whole
+        // hints file with a single feature (real data-loss incident).
+        if (typeof raw !== "object") return null;
+        return raw;
       }
 
       function rememberGateHints(featureName, gateIds) {
         if (!featureName || !gateIds?.length) return;
         const hints = readPersistedGateHints();
-        const merged = new Set([...(hints[featureName] ?? []), ...gateIds]);
+        if (hints == null) return; // corrupt storage — never overwrite it
+        const existing = hints[featureName] ?? [];
+        const before = existing.length;
+        const merged = new Set([...existing, ...gateIds]);
+        // Persisting on every discover wrote localStorage ~150× per refresh;
+        // skip the write when nothing new was learned.
+        if (merged.size === before) return;
         hints[featureName] = [...merged];
         storage.persisted.set(PERSISTED_GATE_HINTS_KEY, hints);
       }
 
-      function readStatsigGateCatalog() {
-        const byId = new Map();
-        const byName = new Map();
-
-        try {
-          for (let i = 0; i < (global.localStorage?.length ?? 0); i += 1) {
-            const storageKey = global.localStorage.key(i);
-            if (!storageKey?.startsWith("statsig.cached.evaluations.")) continue;
-            const raw = global.localStorage.getItem(storageKey);
-            if (!raw) continue;
-            const envelope = JSON.parse(raw);
-            const data = JSON.parse(envelope.data);
-            for (const [gateId, gate] of Object.entries(data.feature_gates ?? {})) {
-              const name = gate?.name == null ? null : String(gate.name);
-              const value = typeof gate?.value === "boolean" ? gate.value : null;
-              byId.set(gateId, { name, value });
-              if (name) {
-                const bucket = byName.get(name) ?? new Set();
-                bucket.add(gateId);
-                byName.set(name, bucket);
-              }
-            }
-          }
-        } catch {
-          // ignore parse errors
-        }
-
-        return { byId, byName };
-      }
-
       function discoverStatsigGatesForFeature(featureName) {
         const gateIds = new Set();
-        const catalog = readStatsigGateCatalog();
+        // Shared, signature-invalidated SDK cache — the old local parser
+        // re-JSON.parsed the multi-MB statsig blob per feature per refresh.
+        const catalog = flags.readStatsigGateCatalog();
         const statsigDefaults = readStatsigFeatures();
         const persistedHints = readPersistedGateHints();
 
@@ -301,7 +285,7 @@
         if (flags.readStatsigGate(featureName) != null) gateIds.add(featureName);
 
         for (const gateId of CODEX_BUNDLE_GATE_HINTS[featureName] ?? []) gateIds.add(gateId);
-        for (const gateId of persistedHints[featureName] ?? []) gateIds.add(gateId);
+        for (const gateId of persistedHints?.[featureName] ?? []) gateIds.add(gateId);
 
         for (const [gateId, gate] of catalog.byId) {
           if (gate?.name === featureName) gateIds.add(gateId);

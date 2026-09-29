@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Fixed
+- Switching back to Codex no longer freezes for seconds: feature-flags
+  enrichment re-JSON-parsed the ~4 MB `statsig.cached.evaluations.*`
+  localStorage blob per feature per refresh (measured 1240 big parses /
+  4.5 GB per 60 s cycle — three consecutive ~7 s main-thread stalls; the
+  throttled refresh timer landed right on window refocus). Gate reads now
+  share a signature-invalidated cache via `flags.readStatsigGateCatalog()`
+  (2 parses / 0 long tasks per refresh after the fix); gate-hint
+  persistence skips no-op writes and never overwrites a hints file it
+  failed to parse (a corrupt read had clobbered all 155 feature hints).
 - cdp-inject: an empty `about:blank` prewarm tab passed the page-target
   filter; evaluating the SDK there throws `SecurityError` (localStorage
   access denied), which aborted injection before the real renderer was ever

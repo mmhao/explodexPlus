@@ -291,6 +291,19 @@ capture listeners that `preventDefault` before returning):
   "Select All" menu on top of the still-open Explodex menu — that was the
   double-menu report. SDK `.ex-nav-btn` / `.ex-popover` / `.ex-dialog` carry
   the same rule.
+- **Statsig gate reads are catalog-cached (SDK).** `flags.readStatsigGate`
+  and feature-flags' enrich path used to `JSON.parse` the ~4 MB
+  `statsig.cached.evaluations.*` localStorage blob **per feature per
+  refresh** — measured at 1240 big parses / 4.5 GB parsed per 60 s refresh
+  cycle, i.e. three consecutive ~7 s main-thread stalls (the "switch back
+  to Codex and it freezes for seconds" report, 2026-09-29). The SDK now
+  parses once into `flags.readStatsigGateCatalog()`, invalidated by a
+  cheap value-length signature (+ 10 s TTL backstop); a failed parse is
+  never cached. After the fix a full refresh window shows **2 parses,
+  0 hint writes, 0 long tasks**. The plugin's `rememberGateHints` also
+  skips localStorage writes when discovery learned nothing new, and
+  refuses to overwrite a hints file it could not parse (a corrupt read
+  previously clobbered all 155 feature hints down to one entry).
 
 Measuring feel on a minimized renderer: `requestAnimationFrame` and
 `setTimeout` are throttled hard (a 10 ms poll fired at ~500 ms), and the file

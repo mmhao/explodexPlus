@@ -546,11 +546,18 @@ await flags.propagate({
 });
 
 flags.readStatsigGate(gateId): boolean | null
+flags.readStatsigGateCatalog(): { byId: Map<string, {name, value}>, byName: Map<string, Set<string>> }
 flags.setStatsigGateOverride(gateId, value): boolean   // value null clears for this plugin
 flags.clearStatsigGateOverrides(): void
 flags.invalidateQueries(queryKeys): Promise<void>
 flags.getQueryClient(): unknown | null
 ```
+
+`readStatsigGateCatalog()` 返回 localStorage 中 `statsig.cached.evaluations.*`
+blob（数 MB 级 JSON，解析约 30 ms）的解析结果。结果带缓存，通过廉价的
+value 长度签名加 10 秒 TTL 兜底失效；解析失败时**不会**缓存（下次调用
+自动重试）。返回的 Map 视为只读。请用它代替按 feature 反复解析 blob——
+参见 [COMPATIBILITY.md](../COMPATIBILITY.md) 的响应性笔记。
 
 `propagate()` 总会派发 Statsig 的 `values_updated`（使 hook 重新计算），
 随后当设置了 `hostId` 时使标准宿主查询失效：

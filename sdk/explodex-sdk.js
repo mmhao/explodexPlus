@@ -1031,6 +1031,84 @@
     ];
   }
 
+  // ─── Statsig evaluation catalog cache ───────────────────────────────────
+  // statsig.cached.evaluations.* is a multi-MB double-encoded JSON blob
+  // (~30 ms to JSON.parse twice). feature-flags-playground enriches every
+  // feature with a catalog lookup plus a readStatsigGate per refresh, so an
+  // uncached read cost ~150 full parses per refresh — a 7–14 s main-thread
+  // stall (long-task clusters whenever the throttled 60 s refreshTimer
+  // caught up after window refocus, 2026-09-29). Parse once and reuse:
+  // revalidate with a cheap signature (statsig key value lengths plus the
+  // last-modified stamp, ~0.01 ms) and a TTL backstop instead of reparsing.
+  const STATSIG_EVAL_PREFIX = "statsig.cached.evaluations.";
+  const STATSIG_LAST_MODIFIED_KEY = "statsig.last_modified_time.evaluations";
+  const STATSIG_CATALOG_TTL_MS = 10_000;
+
+  let statsigCatalogCache = { sig: "", at: 0, byId: null, byName: null };
+
+  function statsigCatalogSignature() {
+    try {
+      const ls = global.localStorage;
+      if (!ls) return null;
+      const parts = [];
+      for (let i = 0; i < ls.length; i += 1) {
+        const key = ls.key(i);
+        if (key?.startsWith(STATSIG_EVAL_PREFIX) || key === STATSIG_LAST_MODIFIED_KEY) {
+          // getItem + .length on the multi-MB value is O(1)-cheap (~0.002 ms);
+          // a content change that preserves every length is covered by the TTL.
+          parts.push(key, String(ls.getItem(key)?.length ?? 0));
+        }
+      }
+      return parts.join("|") || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function readStatsigGateCatalog() {
+    const sig = statsigCatalogSignature();
+    const now = Date.now();
+    const fresh =
+      statsigCatalogCache.byId != null &&
+      now - statsigCatalogCache.at < STATSIG_CATALOG_TTL_MS &&
+      (sig == null || statsigCatalogCache.sig === sig);
+    if (fresh) return statsigCatalogCache;
+
+    const byId = new Map();
+    const byName = new Map();
+    let parsedOk = true;
+    try {
+      const ls = global.localStorage;
+      for (let i = 0; i < (ls?.length ?? 0); i += 1) {
+        const storageKey = ls.key(i);
+        if (!storageKey?.startsWith(STATSIG_EVAL_PREFIX)) continue;
+        const raw = ls.getItem(storageKey);
+        if (!raw) continue;
+        const envelope = JSON.parse(raw);
+        const data = JSON.parse(envelope.data);
+        for (const [gateId, gate] of Object.entries(data.feature_gates ?? {})) {
+          const name = gate?.name == null ? null : String(gate.name);
+          const value = typeof gate.value === "boolean" ? gate.value : null;
+          byId.set(gateId, { name, value });
+          if (name) {
+            const bucket = byName.get(name) ?? new Set();
+            bucket.add(gateId);
+            byName.set(name, bucket);
+          }
+        }
+      }
+    } catch {
+      // A failed parse must not be cached: the old per-call code retried on
+      // every read, and pinning an empty catalog for the TTL would turn a
+      // transient failure into a 10 s outage of gate discovery.
+      parsedOk = false;
+    }
+
+    if (!parsedOk) return { sig: sig ?? "", at: now, byId, byName };
+    statsigCatalogCache = { sig: sig ?? "", at: now, byId, byName };
+    return statsigCatalogCache;
+  }
+
   const flags = {
     getQueryClient,
 
@@ -1038,16 +1116,11 @@
 
     readStatsigGate(gateId) {
       try {
-        for (let i = 0; i < (global.localStorage?.length ?? 0); i += 1) {
-          const storageKey = global.localStorage.key(i);
-          if (!storageKey?.startsWith("statsig.cached.evaluations.")) continue;
-          const raw = global.localStorage.getItem(storageKey);
-          if (!raw) continue;
-          const envelope = JSON.parse(raw);
-          const data = JSON.parse(envelope.data);
-          const gate = data.feature_gates?.[gateId];
-          if (gate && typeof gate.value === "boolean") return gate.value;
-        }
+        // Same semantics as the old per-call localStorage scan (single eval
+        // blob): a stored boolean wins, anything else falls through to the
+        // live Statsig client — but backed by the shared parsed catalog.
+        const entry = readStatsigGateCatalog().byId.get(gateId);
+        if (entry && typeof entry.value === "boolean") return entry.value;
       } catch {
         // ignore parse errors
       }
@@ -1060,6 +1133,10 @@
         return null;
       }
     },
+
+    // Parsed statsig.cached.evaluations.* gates, cached and signature-
+    // invalidated. Read-only: treat the returned maps as immutable.
+    readStatsigGateCatalog,
 
     setStatsigGateOverride(
       gateId,

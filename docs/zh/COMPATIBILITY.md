@@ -247,6 +247,17 @@ Copy path 两个菜单同时出现”这几类反馈，根因都是下面列出�
   并在面板与遮罩层上对 `contextmenu` 执行 `preventDefault`。此前面板文字可选中，
   Electron 的原生“全选”菜单会盖在我们还开着的菜单上——就是那次双菜单反馈。
   SDK 的 `.ex-nav-btn` / `.ex-popover` / `.ex-dialog` 同样适用该规则。
+- **Statsig gate 读取走目录缓存（SDK）。** `flags.readStatsigGate` 与
+  feature-flags 的 enrich 路径过去**按 feature、按 refresh** 反复
+  `JSON.parse` localStorage 里约 4 MB 的 `statsig.cached.evaluations.*`
+  blob——实测每个 60 秒 refresh 周期 1240 次大解析 / 4.5 GB 解析量，
+  即连续三个约 7 秒的主线程停顿（"切回 Codex 后冻结数秒"反馈，
+  2026-09-29）。现在 SDK 只解析一次并缓存于
+  `flags.readStatsigGateCatalog()`，通过廉价的 value 长度签名（+ 10 秒
+  TTL 兜底）失效；解析失败**不会**缓存。修复后完整 refresh 窗口实测
+  **2 次解析、0 次 hint 写入、0 个长任务**。插件的 `rememberGateHints`
+  在发现无新增时跳过 localStorage 写入，并且拒绝覆盖无法解析的 hints
+  文件（此前读到损坏数据会把全部 155 个 feature 的 hints 覆盖成一条）。
 
 在最小化的渲染进程里测手感并不可靠：`requestAnimationFrame` 与 `setTimeout`
 会被严重节流（10ms 轮询实际 ~500ms 才触发），且窗口隐藏/项目空闲时 Files 树
